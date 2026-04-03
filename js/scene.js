@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { skier, animateSkier } from './skier.js';
+import { createTerrain, updateTerrain, setSnowTexture } from './terrain.js';
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
@@ -15,7 +15,7 @@ const camera = new THREE.PerspectiveCamera(
     0.1,
     600
 );
-camera.position.set(6, 2, 0);
+camera.position.set(0, 3, -5);
 camera.lookAt(0, 1, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -42,8 +42,37 @@ scene.add(sunLight);
 
 scene.add(skier);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
+const chunks = createTerrain(scene);
+
+// Speed starts at 14 units/sec and ramps up 
+const SPEED_INITIAL = 14;
+const SPEED_RAMP = 0.4;         // units per second of play time
+let gameSpeed = SPEED_INITIAL;
+
+const keys = {left: false, right: false};
+
+const loader   = new THREE.TextureLoader();
+const textures = [
+    null,
+    loader.load('textures/snow_dry.jpg'),
+    loader.load('textures/snow_icy.jpg'),
+];
+let texIndex = 0;
+
+document.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = true;
+    if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
+});
+
+document.addEventListener('keyup', (e) => {
+    if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = false;
+    if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = false;
+    if (e.code === 'KeyT') {
+        texIndex = (texIndex + 1) % textures.length;
+        setSnowTexture(chunks, textures[texIndex]);
+    }
+
+});
 
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -55,14 +84,24 @@ let elapsed = 0;
 let lastTime = performance.now();
 
 function animate(now) {
-    requestAnimationFrame(animate);
+
     const delta = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
     elapsed += delta;
+    
+    gameSpeed = SPEED_INITIAL + elapsed * SPEED_RAMP;
+    updateTerrain(chunks, gameSpeed, delta);
+
+    if (keys.left)  skier.position.x -= 6 * delta;
+    if (keys.right) skier.position.x += 6 * delta;
+    skier.position.x = Math.max(-12, Math.min(12, skier.position.x));
+
+    const targetX = skier.position.x * 0.4;
+    camera.position.x += (targetX - camera.position.x) * 0.08;
+    camera.lookAt(skier.position.x, 1, 0);
 
     animateSkier(elapsed);
-    controls.update();
     renderer.render(scene, camera);
+    requestAnimationFrame(animate);
 }
-
 requestAnimationFrame(animate);
