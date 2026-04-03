@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { skier, animateSkier } from './skier.js';
-import { createTerrain, updateTerrain, setSnowTexture } from './terrain.js';
+import { createTerrain, updateTerrain, setSnowTexture, makeSnowTexture } from './terrain.js';
+
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
@@ -52,26 +53,37 @@ let gameSpeed = SPEED_INITIAL;
 const keys = {left: false, right: false};
 
 const loader   = new THREE.TextureLoader();
+const snowTex = loader.load('textures/snow_rough.jpg');
+
+// Repeat tiles the texture across the plane instead of stretching it
+snowTex.wrapS = THREE.RepeatWrapping;
+snowTex.wrapT = THREE.RepeatWrapping;
+
+snowTex.repeat.set(4, 10);
+
 const textures = [
-    null,
-    loader.load('textures/snow_dry.jpg'),
-    loader.load('textures/snow_icy.jpg'),
+    makeSnowTexture(0),   // dry snow
+    makeSnowTexture(1),   // icy snow
+    makeSnowTexture(2),   // packed snow
 ];
+
 let texIndex = 0;
+
+setSnowTexture(chunks, textures[0]);
+
 
 document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = true;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
+        if (e.code === 'KeyT') {
+        texIndex = (texIndex + 1) % textures.length;
+        setSnowTexture(chunks, textures[texIndex]);
+    }
 });
 
 document.addEventListener('keyup', (e) => {
     if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = false;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = false;
-    if (e.code === 'KeyT') {
-        texIndex = (texIndex + 1) % textures.length;
-        setSnowTexture(chunks, textures[texIndex]);
-    }
-
 });
 
 window.addEventListener('resize', () => {
