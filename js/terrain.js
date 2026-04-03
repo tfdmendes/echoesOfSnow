@@ -34,7 +34,7 @@ export function createTerrain(scene) {
     const chunks = [];
     for (let i = 0; i < POOL_SIZE; i++) {
         const chunk = createChunk();
-        chunk.position.z = i * CHUNK_LENGTH + CHUNK_LENGTH * 0.5;
+        chunk.position.z = i * CHUNK_LENGTH;
         scene.add(chunk);
         chunks.push(chunk);
     }
@@ -42,16 +42,19 @@ export function createTerrain(scene) {
 }
 
 export function updateTerrain(chunks, speed, delta) {
+    // First pass -- move everything
     for (const chunk of chunks) {
         chunk.position.z -= speed * delta;
+    }
 
-        // When that clears the camera, recycle the chunk to the front
-        if (chunk.position.z < -CHUNK_LENGTH * 0.5) {
-            chunk.position.z = frontZ(chunks) + CHUNK_LENGTH;
+    // Second pass -- recycle only after all positions are final
+    for (const chunk of chunks) {
+        if (chunk.position.z < -CHUNK_LENGTH) {
+            const idealFront = Math.round(frontZ(chunks) / CHUNK_LENGTH) * CHUNK_LENGTH;
+            chunk.position.z = idealFront + CHUNK_LENGTH;
         }
     }
 }
-
 // Swaps the snow texture on all chunks
 // The loop lives here because snowMaterial is private to this module.
 export function setSnowTexture(chunks, texture) {

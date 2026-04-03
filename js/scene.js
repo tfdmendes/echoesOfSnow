@@ -104,8 +104,8 @@ function animate(now) {
     gameSpeed = SPEED_INITIAL + elapsed * SPEED_RAMP;
     updateTerrain(chunks, gameSpeed, delta);
 
-    if (keys.left)  skier.position.x -= 6 * delta;
-    if (keys.right) skier.position.x += 6 * delta;
+    if (keys.left)  skier.position.x += 6 * delta;
+    if (keys.right) skier.position.x -= 6 * delta;
     skier.position.x = Math.max(-12, Math.min(12, skier.position.x));
 
     const targetX = skier.position.x * 0.4;

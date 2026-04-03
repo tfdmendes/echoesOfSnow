@@ -8,6 +8,8 @@ let leftArmGroup, rightArmGroup;
 let leftForearmGroup, rightForearmGroup;
 let leftPoleGroup, rightPoleGroup;
 
+const POLE_LENGTH = 0.75;
+
 function createArm(side, jacketMat, poleMat, gloveMat) {
     const sign = side === 'left' ? -1 : 1;
 
@@ -42,10 +44,10 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
     polePivot.position.set(0, -0.24, 0.01);
 
     const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.012, 0.012, 0.95, 6),
+        new THREE.CylinderGeometry(0.012, 0.012, POLE_LENGTH, 6),
         poleMat
     );
-    pole.position.y = -0.47;
+    pole.position.y = -POLE_LENGTH / 2;
     pole.castShadow = true;
 
     polePivot.add(pole);
