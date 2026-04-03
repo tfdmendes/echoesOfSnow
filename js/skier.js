@@ -15,6 +15,7 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
     shoulder.position.set(0.22 * sign, 1.12, 0.02);
     shoulder.rotation.z = 0.16 * sign;
 
+    // CylinderGeometry(radiusTop, radiusBottom, height, segments)
     const upperArm = new THREE.Mesh(
         new THREE.CylinderGeometry(0.04, 0.04, 0.24, 8),
         jacketMat
@@ -36,6 +37,7 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
     hand.position.set(0, -0.24, 0.01);
     hand.castShadow = true;
 
+    // pole pivot sits at the hand position so the pole always follows the grip
     const polePivot = new THREE.Group();
     polePivot.position.set(0, -0.24, 0.01);
 
@@ -56,7 +58,6 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
 function createLeg(side, pantsMat, bootMat, skiMat) {
     const sign = side === 'left' ? -1 : 1;
 
-    // hip is the pivot point for the whole leg
     const hip = new THREE.Group();
     hip.position.set(0.11 * sign, 0.78, 0);
 
@@ -67,7 +68,6 @@ function createLeg(side, pantsMat, bootMat, skiMat) {
     upperLeg.position.y = -0.14;
     upperLeg.castShadow = true;
 
-    // knee pivots the lower leg and everything below it
     const knee = new THREE.Group();
     knee.position.set(0, -0.28, 0);
 
@@ -81,6 +81,7 @@ function createLeg(side, pantsMat, bootMat, skiMat) {
     const ankle = new THREE.Group();
     ankle.position.set(0, -0.28, 0.01);
 
+    // BoxGeometry(width, height, depth)
     const boot = new THREE.Mesh(
         new THREE.BoxGeometry(0.09, 0.08, 0.18),
         bootMat
@@ -88,7 +89,6 @@ function createLeg(side, pantsMat, bootMat, skiMat) {
     boot.position.set(0, -0.02, 0.03);
     boot.castShadow = true;
 
-    // ski pivot attached to ankle - ski follows the foot
     const skiPivot = new THREE.Group();
     skiPivot.position.set(0, -0.06, 0.03);
 
@@ -132,6 +132,7 @@ function createSkier() {
     head.position.set(0, 1.35, 0);
     head.castShadow = true;
 
+    // partial sphere - covers only the top half
     const hat = new THREE.Mesh(
         new THREE.SphereGeometry(0.16, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2),
         hatMat
@@ -164,54 +165,80 @@ function createSkier() {
     upperBodyGroup.add(torso, head, hat, goggles, leftArmGroup, rightArmGroup);
     group.add(upperBodyGroup, leftLegGroup, rightLegGroup);
 
-    // base skiing stance - knees bent, upper body forward
-    upperBodyGroup.rotation.x = 0.10;
+    // base skiing stance - knees bent, upper body leaning forward
+    upperBodyGroup.rotation.x = -0.50;
 
     leftLegGroup.rotation.x  = -0.20;
     rightLegGroup.rotation.x = -0.20;
 
-    leftKneeGroup.rotation.x  = 0.40;
-    rightKneeGroup.rotation.x = 0.40;
+    leftKneeGroup.rotation.x  = -0.20;
+    rightKneeGroup.rotation.x = -0.20;
 
     leftSkiGroup.rotation.y  =  0.015;
     rightSkiGroup.rotation.y = -0.015;
 
-    leftArmGroup.rotation.x  = -1.00;
-    rightArmGroup.rotation.x = -1.00;
+    leftArmGroup.rotation.x  = -0.45;
+    rightArmGroup.rotation.x = -0.45;
 
-    leftArmGroup.rotation.z  = -0.18;
-    rightArmGroup.rotation.z =  0.18;
+    leftArmGroup.rotation.z  = -0.12;
+    rightArmGroup.rotation.z =  0.12;
 
-    leftForearmGroup.rotation.x  = -0.38;
-    rightForearmGroup.rotation.x = -0.38;
+    leftForearmGroup.rotation.x  = -0.35;
+    rightForearmGroup.rotation.x = -0.35;
 
-    leftPoleGroup.rotation.x  = 0.20;
-    rightPoleGroup.rotation.x = 0.20;
+    leftPoleGroup.rotation.x  = 0.05;
+    rightPoleGroup.rotation.x = 0.05;
 
     return group;
 }
 
 export const skier = createSkier();
 
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+// [poles forward, poles swept back]
+const ARM_X     = [-0.45, 0.35];
+const ARM_Z     = [0.12,  0.20];
+const FOREARM_X = [-0.35, -0.10];
+const POLE_X    = [0.05,  0.80];
+const BODY_LEAN = [-0.15,  -0.02];
+
 export function animateSkier(time) {
-    const cycle = Math.sin(time * 2.0);
+    const speed = 1.8;
 
-    // subtle body bob from terrain absorption
-    skier.position.y = Math.abs(cycle) * 0.02;
+    // sin mapped to 0-1 to drive the push cycle
+    const raw = Math.sin(time * speed);
+    const t   = (raw + 1.0) * 0.5;
 
-    // small side-to-side weight shift
-    upperBodyGroup.rotation.z = cycle * 0.03;
+    skier.position.y       = Math.abs(raw) * 0.02;
+    upperBodyGroup.rotation.z = raw * 0.02;
+    upperBodyGroup.rotation.x = 0.10 + lerp(BODY_LEAN[0], BODY_LEAN[1], t);
 
-    // knees compress and extend with the stride
-    leftKneeGroup.rotation.x  = 0.40 + cycle * 0.08;
-    rightKneeGroup.rotation.x = 0.40 - cycle * 0.08;
+    // legs compress slightly in sync with the pole push
+    leftLegGroup.rotation.x   = -0.20 + raw * 0.05;
+    rightLegGroup.rotation.x  = -0.20 - raw * 0.05;
+    leftKneeGroup.rotation.x  =  0.40 + raw * 0.05;
+    rightKneeGroup.rotation.x =  0.40 - raw * 0.05;
 
-    // both poles push back together then recover
-    const plant = Math.sin(time * 2.0);
-    leftPoleGroup.rotation.x  = 0.20 + plant * 0.15;
-    rightPoleGroup.rotation.x = 0.20 + plant * 0.45;
+    // ski compensates hip rotation to stay flat on the snow
+    leftSkiGroup.rotation.x   = -0.20 - raw * 0.05;
+    rightSkiGroup.rotation.x  = -0.20 + raw * 0.05;
 
-    // arms follow the pole push slightly
-    leftArmGroup.rotation.x  = -1.00 - Math.max(0, plant) * 0.15;
-    rightArmGroup.rotation.x = -1.00 - Math.max(0, plant) * 0.15;
+    const armX     = lerp(ARM_X[0],     ARM_X[1],     t);
+    const armZ     = lerp(ARM_Z[0],     ARM_Z[1],     t);
+    const forearmX = lerp(FOREARM_X[0], FOREARM_X[1], t);
+    const poleX    = lerp(POLE_X[0],    POLE_X[1],    t);
+
+    leftArmGroup.rotation.x  = armX;
+    rightArmGroup.rotation.x = armX;
+    leftArmGroup.rotation.z  = -armZ;
+    rightArmGroup.rotation.z =  armZ;
+
+    leftForearmGroup.rotation.x  = forearmX;
+    rightForearmGroup.rotation.x = forearmX;
+
+    leftPoleGroup.rotation.x  = poleX;
+    rightPoleGroup.rotation.x = poleX;
 }
