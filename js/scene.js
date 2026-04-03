@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { skier, animateSkier } from './skier.js';
-import { createTerrain, updateTerrain, setSnowTexture, makeSnowTexture } from './terrain.js';
+import {
+    createTerrain, updateTerrain, setSnowTexture, makeSnowTexture,
+    CHUNK_LENGTH, CHUNK_WIDTH
+} from './terrain.js';
+import { populateChunk, clearChunk, checkCollisions } from './obstacles.js';
 
 
 const scene = new THREE.Scene();
@@ -45,6 +49,18 @@ scene.add(skier);
 
 const chunks = createTerrain(scene);
 
+// First 2 chunks are obstacle-free (safe zone)
+const SAFE_CHUNKS = 2;
+for (let i = SAFE_CHUNKS; i < chunks.length; i++) {
+    populateChunk(chunks[i], CHUNK_LENGTH, CHUNK_WIDTH);
+}
+
+// Called every time a chunk wraps to the front of the belt
+function onChunkRecycle(chunk) {
+    clearChunk(chunk);
+    populateChunk(chunk, CHUNK_LENGTH, CHUNK_WIDTH);
+}
+
 // Speed starts at 14 units/sec and ramps up 
 const SPEED_INITIAL = 14;
 const SPEED_RAMP = 0.4;         // units per second of play time
@@ -79,6 +95,7 @@ document.addEventListener('keydown', (e) => {
         texIndex = (texIndex + 1) % textures.length;
         setSnowTexture(chunks, textures[texIndex]);
     }
+    if (e.code === 'KeyR' && gameState === 'gameover') restartGame();
 });
 
 document.addEventListener('keyup', (e) => {
@@ -92,28 +109,109 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+
+let distance  = 0;
+let gameState = 'playing';
+
+const LATERAL_SPEED = 6;
+const LATERAL_LIMIT = 12;
+const LEAN_ANGLE    = 0.18;
+const LEAN_SPEED    = 6;
+
+// HUD overlay (HTML on top of the WebGL canvas)
+const hud = document.createElement('div');
+hud.style.cssText =
+    'position:fixed; top:16px; left:16px; color:#fff; font:bold 18px monospace;' +
+    'text-shadow:0 1px 3px rgba(0,0,0,0.6); pointer-events:none; z-index:10;' +
+    'line-height:1.6;';
+document.body.appendChild(hud);
+
+// Game over screen
+const overlay = document.createElement('div');
+overlay.style.cssText =
+    'position:fixed; inset:0; display:flex; flex-direction:column;' +
+    'align-items:center; justify-content:center; background:rgba(0,0,0,0.55);' +
+    'color:#fff; font-family:sans-serif; z-index:20; pointer-events:none;' +
+    'opacity:0; transition:opacity 0.4s;';
+overlay.innerHTML =
+    '<div style="font-size:48px; font-weight:bold; margin-bottom:12px;">GAME OVER</div>' +
+    '<div id="go-distance" style="font-size:22px; margin-bottom:24px;"></div>' +
+    '<div style="font-size:16px; opacity:0.8;">Press R to restart</div>';
+document.body.appendChild(overlay);
+
+
 let elapsed = 0;
 let lastTime = performance.now();
 
 function animate(now) {
+    requestAnimationFrame(animate);
 
     const delta = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
-    elapsed += delta;
-    
-    gameSpeed = SPEED_INITIAL + elapsed * SPEED_RAMP;
-    updateTerrain(chunks, gameSpeed, delta);
 
-    if (keys.left)  skier.position.x += 6 * delta;
-    if (keys.right) skier.position.x -= 6 * delta;
-    skier.position.x = Math.max(-12, Math.min(12, skier.position.x));
+    if (gameState === 'playing') {
+        elapsed  += delta;
+        gameSpeed = SPEED_INITIAL + elapsed * SPEED_RAMP;
+        distance += gameSpeed * delta;
 
+        // Scroll terrain, recycle chunks with new obstacles
+        updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
+
+        // Lateral movement
+        if (keys.left)  skier.position.x += LATERAL_SPEED * delta;
+        if (keys.right) skier.position.x -= LATERAL_SPEED * delta;
+        skier.position.x = Math.max(-LATERAL_LIMIT, Math.min(LATERAL_LIMIT, skier.position.x));
+
+        // Lean into turns (Z rotation with lerp)
+        let targetLean = 0;
+        if (keys.left)  targetLean =  LEAN_ANGLE;
+        if (keys.right) targetLean = -LEAN_ANGLE;
+        skier.rotation.z += (targetLean - skier.rotation.z) * LEAN_SPEED * delta;
+
+        animateSkier(elapsed);
+
+        // Collision check
+        if (checkCollisions(skier.position, chunks)) {
+            gameState = 'gameover';
+            document.getElementById('go-distance').textContent =
+                Math.floor(distance) + ' m';
+            overlay.style.opacity = '1';
+        }
+
+        // Update HUD
+        hud.innerHTML =
+            'Distance: ' + Math.floor(distance) + ' m<br>' +
+            'Speed: ' + gameSpeed.toFixed(1) + ' m/s';
+    }
+
+    // Camera always follows (stable view during game over)
     const targetX = skier.position.x * 0.4;
     camera.position.x += (targetX - camera.position.x) * 0.08;
     camera.lookAt(skier.position.x, 1, 0);
 
-    animateSkier(elapsed);
     renderer.render(scene, camera);
-    requestAnimationFrame(animate);
 }
+
 requestAnimationFrame(animate);
+
+
+function restartGame() {
+    skier.position.set(0, 0, 0);
+    skier.rotation.z = 0;
+
+    for (let i = 0; i < chunks.length; i++) {
+        clearChunk(chunks[i]);
+        chunks[i].position.set(0, 0, i * CHUNK_LENGTH);
+        if (i >= SAFE_CHUNKS) {
+            populateChunk(chunks[i], CHUNK_LENGTH, CHUNK_WIDTH);
+        }
+    }
+
+    camera.position.set(0, 3, -5);
+    elapsed   = 0;
+    distance  = 0;
+    gameSpeed = SPEED_INITIAL;
+    lastTime  = performance.now();
+    gameState = 'playing';
+    overlay.style.opacity = '0';
+}

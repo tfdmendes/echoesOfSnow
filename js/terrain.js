@@ -2,9 +2,11 @@ import * as THREE from 'three';
 
 // Chunk dimensions -- POOL_SIZE * CHUNK_LENGTH must exceed the camera far plane (600).
 // 8 * 80 = 640, so we have a small margin.
-const CHUNK_LENGTH = 80;
-const CHUNK_WIDTH  = 32;
-const POOL_SIZE    = 8;
+export const CHUNK_LENGTH = 80;
+export const CHUNK_WIDTH  = 32;
+const POOL_SIZE = 8;
+
+
 
 // PlaneGeometry(width, height, widthSegments, heightSegments)
 const CHUNK_GEOMETRY = new THREE.PlaneGeometry(CHUNK_WIDTH, CHUNK_LENGTH, 4, 8);
@@ -14,12 +16,22 @@ const snowMaterial = new THREE.MeshPhongMaterial({
     shininess: 12
 });
 
+
+
+// Each chunk is a group: snow plane + obstacle children
 function createChunk() {
-    const mesh = new THREE.Mesh(CHUNK_GEOMETRY, snowMaterial);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.receiveShadow = true;
-    return mesh;
+    const group = new THREE.Group();
+
+    const plane = new THREE.Mesh(CHUNK_GEOMETRY, snowMaterial);
+    plane.rotation.x = -Math.PI / 2;
+    plane.receiveShadow = true;
+
+    group.add(plane);
+    group.userData.obstacles = [];
+
+    return group;
 }
+
 
 
 function frontZ(chunks) {
@@ -29,6 +41,8 @@ function frontZ(chunks) {
     }
     return max;
 }
+
+
 
 export function createTerrain(scene) {
     const chunks = [];
@@ -41,20 +55,24 @@ export function createTerrain(scene) {
     return chunks;
 }
 
-export function updateTerrain(chunks, speed, delta) {
-    // First pass -- move everything
+
+
+// When a chunk is recycled to the front, clear old obstacles 
+// and generte new ones
+export function updateTerrain(chunks, speed, delta, onRecycle) {
     for (const chunk of chunks) {
         chunk.position.z -= speed * delta;
     }
 
-    // Second pass -- recycle only after all positions are final
     for (const chunk of chunks) {
         if (chunk.position.z < -CHUNK_LENGTH) {
-            const idealFront = Math.round(frontZ(chunks) / CHUNK_LENGTH) * CHUNK_LENGTH;
-            chunk.position.z = idealFront + CHUNK_LENGTH;
+            chunk.position.z = frontZ(chunks) + CHUNK_LENGTH;
+            if (onRecycle) onRecycle(chunk);
         }
     }
 }
+
+
 // Swaps the snow texture on all chunks
 // The loop lives here because snowMaterial is private to this module.
 export function setSnowTexture(chunks, texture) {
@@ -92,6 +110,7 @@ export function makeSnowTexture(variant) {
         }
     }
 
+
     function smoothNoise(x, y) {
         // Map pixel coords to grid coords
         const gx = (x / size) * gridSize;
@@ -106,12 +125,11 @@ export function makeSnowTexture(variant) {
         const b = grid[ix + 1][iy];
         const c = grid[ix][iy + 1];
         const d = grid[ix + 1][iy + 1];
-        return a * (1 - fx) * (1 - fy)
-             + b * fx       * (1 - fy)
-             + c * (1 - fx) * fy
-             + d * fx       * fy;
+        return a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
     }
 
+
+    
     // Fill pixel by pixel with slight random noise around the base colour
     const imageData = ctx.createImageData(size, size);
     const data = imageData.data;
