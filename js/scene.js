@@ -119,7 +119,7 @@ for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
 //   - ambient color and intensity
 //   - fog near/far distances (visibility drops at night)
 //
-// Phases (approximate):
+// Phases (sorta):
 //   0.00        night (deep dark)
 //   0.10-0.20   dawn  (warm orange horizon)
 //   0.20-0.50   day   (bright sky, full sun)
@@ -127,20 +127,20 @@ for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
 //   0.65-0.80   dusk  (purple fading to dark)
 //   0.80-1.00   night (wraps back to 0)
 
-// Each keyframe: { t, sky, sun, sunI, amb, ambI, fogN, fogF }
+// Each keyframe: { time, skyColor, sunColor, sunIntensity, ambientColor, ambIntensity, fogNear, fogFar }
 // Colors stored as THREE.Color for easy lerp.
 const CK = [
-    { t: 0.00, sky: c(0x1a1a35), sun: c(0x445577), sunI: 0.25, amb: c(0x1a1a30), ambI: 0.25, fogN: 20, fogF: 140 },
-    { t: 0.10, sky: c(0x252540), sun: c(0x556688), sunI: 0.30, amb: c(0x1e1e35), ambI: 0.28, fogN: 22, fogF: 150 },
-    { t: 0.15, sky: c(0xd48a5a), sun: c(0xffaa55), sunI: 0.65, amb: c(0x886655), ambI: 0.35, fogN: 25, fogF: 180 },
-    { t: 0.22, sky: c(0x87ceeb), sun: c(0xfff5e0), sunI: 1.10, amb: c(0x8899bb), ambI: 0.55, fogN: 38, fogF: 260 },
-    { t: 0.35, sky: c(0x87ceeb), sun: c(0xffffff), sunI: 1.25, amb: c(0x99aacc), ambI: 0.60, fogN: 42, fogF: 290 },
-    { t: 0.50, sky: c(0x87ceeb), sun: c(0xffffff), sunI: 1.20, amb: c(0x8899bb), ambI: 0.58, fogN: 40, fogF: 280 },
-    { t: 0.55, sky: c(0xddaa66), sun: c(0xffcc77), sunI: 1.00, amb: c(0x887755), ambI: 0.48, fogN: 32, fogF: 220 },
-    { t: 0.62, sky: c(0xee7744), sun: c(0xff5533), sunI: 0.75, amb: c(0x884433), ambI: 0.38, fogN: 22, fogF: 170 },
-    { t: 0.70, sky: c(0x443355), sun: c(0x667799), sunI: 0.38, amb: c(0x2a2244), ambI: 0.30, fogN: 22, fogF: 155 },
-    { t: 0.80, sky: c(0x1e1e30), sun: c(0x445577), sunI: 0.25, amb: c(0x181830), ambI: 0.25, fogN: 20, fogF: 140 },
-    { t: 1.00, sky: c(0x1a1a35), sun: c(0x445577), sunI: 0.25, amb: c(0x1a1a30), ambI: 0.25, fogN: 20, fogF: 140 },
+    { time: 0.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x1a1a30), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
+    { time: 0.10, skyColor: c(0x252540), sunColor: c(0x556688), sunIntensity: 0.30, ambientColor: c(0x1e1e35), ambientIntensity: 0.28, fogNear: 22, fogFar: 150 },
+    { time: 0.15, skyColor: c(0xd48a5a), sunColor: c(0xffaa55), sunIntensity: 0.65, ambientColor: c(0x886655), ambientIntensity: 0.35, fogNear: 25, fogFar: 180 },
+    { time: 0.22, skyColor: c(0x87ceeb), sunColor: c(0xfff5e0), sunIntensity: 1.10, ambientColor: c(0x8899bb), ambientIntensity: 0.55, fogNear: 38, fogFar: 260 },
+    { time: 0.35, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.25, ambientColor: c(0x99aacc), ambientIntensity: 0.60, fogNear: 42, fogFar: 290 },
+    { time: 0.50, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.20, ambientColor: c(0x8899bb), ambientIntensity: 0.58, fogNear: 40, fogFar: 280 },
+    { time: 0.55, skyColor: c(0xddaa66), sunColor: c(0xffcc77), sunIntensity: 1.00, ambientColor: c(0x887755), ambientIntensity: 0.48, fogNear: 32, fogFar: 220 },
+    { time: 0.62, skyColor: c(0xee7744), sunColor: c(0xff5533), sunIntensity: 0.75, ambientColor: c(0x884433), ambientIntensity: 0.38, fogNear: 22, fogFar: 170 },
+    { time: 0.70, skyColor: c(0x443355), sunColor: c(0x667799), sunIntensity: 0.38, ambientColor: c(0x2a2244), ambientIntensity: 0.30, fogNear: 22, fogFar: 155 },
+    { time: 0.80, skyColor: c(0x1e1e30), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x181830), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
+    { time: 1.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x1a1a30), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
 ];
 
 // Helper: create a THREE.Color from a hex int
@@ -153,60 +153,60 @@ const tmpAmb = new THREE.Color();
 
 
 // Find the two keyframes surrounding t and return the interpolated values
-function sampleCycle(t) {
+function sampleCycle(normalizedTime) {
     // Clamp t into [0, 1)
-    t = t - Math.floor(t);
+    const t = normalizedTime - Math.floor(normalizedTime);
 
-    // Find the pair of keyframes that bracket t
-    let a = CK[0];
-    let b = CK[1];
-    for (let i = 0; i < CK.length - 1; i++) {
-        if (t >= CK[i].t && t < CK[i + 1].t) {
-            a = CK[i];
-            b = CK[i + 1];
+    // Find the two keyframes that bracket the current time
+    let from = CYCLE_KEYFRAMES[0];
+    let to   = CYCLE_KEYFRAMES[1];
+    for (let i = 0; i < CYCLE_KEYFRAMES.length - 1; i++) {
+        if (t >= CYCLE_KEYFRAMES[i].time && t < CYCLE_KEYFRAMES[i + 1].time) {
+            from = CYCLE_KEYFRAMES[i];
+            to   = CYCLE_KEYFRAMES[i + 1];
             break;
         }
     }
 
-    // Local interpolation factor within this segment
-    const segLen = b.t - a.t;
-    const f = segLen > 0 ? (t - a.t) / segLen : 0;
+    // How far we are between the two keyframes (0 = at 'from', 1 = at 'to')
+    const segmentLength = to.time - from.time;
+    const blend = segmentLength > 0 ? (t - from.time) / segmentLength : 0;
 
     return {
-        sky:  tmpSky.copy(a.sky).lerp(b.sky, f),
-        sun:  tmpSun.copy(a.sun).lerp(b.sun, f),
-        sunI: a.sunI + (b.sunI - a.sunI) * f,
-        amb:  tmpAmb.copy(a.amb).lerp(b.amb, f),
-        ambI: a.ambI + (b.ambI - a.ambI) * f,
-        fogN: a.fogN + (b.fogN - a.fogN) * f,
-        fogF: a.fogF + (b.fogF - a.fogF) * f,
+        skyColor:          tmpSky.copy(from.skyColor).lerp(to.skyColor, blend),
+        sunColor:          tmpSun.copy(from.sunColor).lerp(to.sunColor, blend),
+        sunIntensity:      from.sunIntensity      + (to.sunIntensity      - from.sunIntensity)      * blend,
+        ambientColor:      tmpAmb.copy(from.ambientColor).lerp(to.ambientColor, blend),
+        ambientIntensity:  from.ambientIntensity  + (to.ambientIntensity  - from.ambientIntensity)  * blend,
+        fogNear:           from.fogNear           + (to.fogNear           - from.fogNear)           * blend,
+        fogFar:            from.fogFar            + (to.fogFar            - from.fogFar)            * blend,
     };
 }
 
 
 // Apply the cycle state to the scene lights, fog, and background.
 // Also positions the sun in an arc across the sky.
-function updateCycle(t) {
-    const s = sampleCycle(t);
+function updateCycle(normalizedTime) {
+    const state = sampleCycle(normalizedTime);
 
     // Sky and fog color
-    scene.background.copy(s.sky);
-    scene.fog.color.copy(s.sky);
-    scene.fog.near = s.fogN;
-    scene.fog.far  = s.fogF;
+    scene.background.copy(state.skyColor);
+    scene.fog.color.copy(state.skyColor);
+    scene.fog.near = state.fogNear;
+    scene.fog.far  = state.fogFar;
 
     // Ambient
-    ambientLight.color.copy(s.amb);
-    ambientLight.intensity = s.ambI;
+    ambientLight.color.copy(state.ambientColor);
+    ambientLight.intensity = state.ambientIntensity;
 
     // Sun color and intensity
-    sunLight.color.copy(s.sun);
-    sunLight.intensity = s.sunI;
+    sunLight.color.copy(state.sunColor);
+    sunLight.intensity = state.sunIntensity;
 
     // Sun orbit: the sun peaks at t=0.35 (midday) and dips below
     // the horizon at t=0.85 (midnight). Using cosine centered on
     // t=0.35 so cos(0) = 1 = highest point.
-    const sunAngle = (t - 0.35) * Math.PI * 2;
+    const sunAngle = (normalizedTime - 0.35) * Math.PI * 2;
     const sunDist  = 80;
     const sunBaseY = 5;
     const sunAmp   = 65;   // how high above / below base the sun swings
@@ -301,6 +301,8 @@ window.addEventListener('resize', () => {
 
 // Returns the current position in the day/night cycle (0-1)
 function getCycleT() {
+    // 0.12 makes it so that the game starts in the morning instead as of starting at night
+    // TODO: maybe add some sort of random value so that the game starts at different times of the day
     return ((elapsed / CYCLE_DURATION) + 0.12) % 1.0;
 }
 
