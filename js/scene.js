@@ -74,13 +74,17 @@ sunLight.castShadow = true;
 sunLight.shadow.mapSize.width  = 4096;
 sunLight.shadow.mapSize.height = 4096;
 
-// Wider frustum so shadows render further from the skier
+// The shadow camera uses an orthographic frustum that defines the volume
+// where shadows are computed. Objects outside this box cast no shadow.
+// The frustum is sized to match the maximum fog distance (~290) so that
+// every visible obstacle casts a shadow. Going beyond fog range would
+// waste shadow map resolution on areas the player cannot see.
 sunLight.shadow.camera.near   = 1;
-sunLight.shadow.camera.far    = 400;
-sunLight.shadow.camera.left   = -70;
-sunLight.shadow.camera.right  = 70;
-sunLight.shadow.camera.top    = 100;
-sunLight.shadow.camera.bottom = -60;
+sunLight.shadow.camera.far    = 800;
+sunLight.shadow.camera.left   = -120;
+sunLight.shadow.camera.right  = 120;
+sunLight.shadow.camera.top    = 300;
+sunLight.shadow.camera.bottom = -100;
 
 // The sun looks at this target, which follows the skier.
 // This keeps the shadow frustum centered on the action

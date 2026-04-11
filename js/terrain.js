@@ -7,7 +7,6 @@ export const CHUNK_WIDTH  = 32;
 const POOL_SIZE = 8;
 
 
-
 // PlaneGeometry(width, height, widthSegments, heightSegments)
 const CHUNK_GEOMETRY = new THREE.PlaneGeometry(CHUNK_WIDTH, CHUNK_LENGTH, 4, 8);
 
@@ -15,7 +14,6 @@ const snowMaterial = new THREE.MeshPhongMaterial({
     color:     0xdde8f5,
     shininess: 12
 });
-
 
 
 // Each chunk is a group: snow plane + obstacle children
@@ -31,7 +29,6 @@ function createChunk() {
 
     return group;
 }
-
 
 
 function frontZ(chunks) {
