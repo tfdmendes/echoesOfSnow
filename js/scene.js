@@ -1,7 +1,3 @@
-// ============================================================
-//  IMPORTS
-// ============================================================
-
 import * as THREE from 'three';
 import { skier, animateSkier } from './skier.js';
 import {
@@ -129,7 +125,7 @@ for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
 
 // Each keyframe: { time, skyColor, sunColor, sunIntensity, ambientColor, ambIntensity, fogNear, fogFar }
 // Colors stored as THREE.Color for easy lerp.
-const CK = [
+const CYCLE_KEYFRAMES = [
     { time: 0.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x1a1a30), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
     { time: 0.10, skyColor: c(0x252540), sunColor: c(0x556688), sunIntensity: 0.30, ambientColor: c(0x1e1e35), ambientIntensity: 0.28, fogNear: 22, fogFar: 150 },
     { time: 0.15, skyColor: c(0xd48a5a), sunColor: c(0xffaa55), sunIntensity: 0.65, ambientColor: c(0x886655), ambientIntensity: 0.35, fogNear: 25, fogFar: 180 },
@@ -150,6 +146,87 @@ function c(hex) { return new THREE.Color(hex); }
 const tmpSky = new THREE.Color();
 const tmpSun = new THREE.Color();
 const tmpAmb = new THREE.Color();
+
+
+
+
+// Generates a radial gradient texture for the glow sprite
+// White at the center, fully transparent at the edge
+// The same as the snow textures in terrain.js
+function makeGlowTexture() {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    const center   = size / 2;
+
+    // createRadialGradient(x0, y0, r0, x1, y1, r1)
+    const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
+
+    gradient.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)'); 
+    gradient.addColorStop(0.4, 'rgba(255, 255, 255, 0.3)');
+    gradient.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    return new THREE.CanvasTexture(canvas);
+}
+
+
+
+// ============================================================
+//  SUN AND MOON VISUALS
+// ============================================================
+
+const glowTexture = makeGlowTexture();
+
+// MeshBasicMaterial ignores all light sources and renders with flat color.
+// This is correct for the sun and moon -- they are light sources themselves,
+// not surfaces that receive light.
+const sunMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(2.5, 16, 16), // SphereGeometry(radius, widthSegments, heightSegments)
+    new THREE.MeshBasicMaterial({ color: 0xffffaa })
+);
+scene.add(sunMesh);
+
+// SpriteMaterial always faces the camera regardless of scene orientation.
+// AdditiveBlending adds the sprite's color on top of whatever is behind it,
+// which is exactly how real lens glow works: it brightens, never darkens.
+// depthWrite false prevents the transparent quad from writing to the depth
+// buffer and occluding objects behind it.
+const sunGlowMat = new THREE.SpriteMaterial({
+    map:         glowTexture,
+    color:       0xffdd66,
+    blending:    THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite:  false,
+});
+const sunGlow = new THREE.Sprite(sunGlowMat);
+sunGlow.scale.set(28, 28, 1); // Sprite.scale(x, y, z) -- z is ignored for sprites
+scene.add(sunGlow);
+
+// Moon is smaller and cooler in color temperature than the sun
+const moonMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(1.6, 16, 16), // SphereGeometry(radius, widthSegments, heightSegments)
+    new THREE.MeshBasicMaterial({ color: 0xdde8ff })
+);
+scene.add(moonMesh);
+
+const moonGlowMat = new THREE.SpriteMaterial({
+    map:         glowTexture,
+    color:       0x8899cc,
+    blending:    THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite:  false,
+});
+const moonGlow = new THREE.Sprite(moonGlowMat);
+moonGlow.scale.set(14, 14, 1); // Sprite.scale(x, y, z) -- smaller halo than the sun
+scene.add(moonGlow);
+
+
 
 
 // Find the two keyframes surrounding t and return the interpolated values
@@ -212,14 +289,44 @@ function updateCycle(normalizedTime) {
     const sunAmp   = 65;   // how high above / below base the sun swings
 
     sunLight.position.set(
-        Math.sin(sunAngle) * sunDist * 0.4,           // lateral drift
+        Math.sin(sunAngle) * sunDist * 0.4,           // lateral drift (east-west sweep)
         sunBaseY + Math.cos(sunAngle) * sunAmp,        // arc: high at midday, low at night
-        -Math.abs(Math.sin(sunAngle)) * sunDist * 0.5  // always cast forward along the slope
+        sunDist * 0.6                                  // always in front of the camera so the sun/moon are visible
     );
 
     // Offset the sun position relative to the skier so shadows follow the action
     sunLight.position.x += sunTarget.position.x;
     sunLight.position.z += sunTarget.position.z;
+
+
+    // Place the sun mesh and glow at the same world position as the light source.
+    // The light position already includes the skier offset applied above.
+    sunMesh.position.copy(sunLight.position);
+    sunGlow.position.copy(sunLight.position);
+
+    // The moon orbits on the opposite side of the arc (half cycle out of phase).
+    // We reuse the same orbital math as the sun but offset by PI radians.
+    const moonAngle = sunAngle + Math.PI;
+    const moonX =  Math.sin(moonAngle) * sunDist * 0.4       + sunTarget.position.x;
+    const moonY =  sunBaseY + Math.cos(moonAngle) * sunAmp;
+    const moonZ =  sunDist * 0.6                             + sunTarget.position.z;
+
+    moonMesh.position.set(moonX, moonY, moonZ);
+    moonGlow.position.set(moonX, moonY, moonZ);
+
+    // Fade each body in and out based on how day-like the moment is.
+    // sunLight.intensity is already interpolated by the keyframes, so it
+    // serves as a proxy: high = day, low = night.
+    const dayness   = Math.min(1, sunLight.intensity / 1.0);
+    const nightness = 1.0 - dayness;
+
+    sunMesh.material.opacity     = dayness;
+    sunMesh.material.transparent = true;
+    sunGlowMat.opacity           = dayness * 0.8;
+
+    moonMesh.material.opacity     = nightness;
+    moonMesh.material.transparent = true;
+    moonGlowMat.opacity           = nightness * 0.5;
 }
 
 

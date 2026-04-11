@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
-const MIN_SPACING   = 3.5;
-const EDGE_MARGIN   = 2.0;
+const MIN_SPACING = 3.5;
+const EDGE_MARGIN = 2.0;
 const SKIER_RADIUS = 0.45;
 
 const BASE_MIN = 3;
@@ -10,58 +10,58 @@ const HARD_MIN = 6;
 const HARD_MAX = 12;
 
 // Shared geometries
-const TRUNK_GEO  = new THREE.CylinderGeometry(0.12, 0.16, 1.4, 8);
+const TRUNK_GEO = new THREE.CylinderGeometry(0.12, 0.16, 1.4, 8);
 const CANOPY_BOT = new THREE.ConeGeometry(1.0, 2.0, 8);
 const CANOPY_MID = new THREE.ConeGeometry(0.75, 1.5, 8);
 const CANOPY_TOP = new THREE.ConeGeometry(0.5, 1.1, 8);
-const ROCK_SM    = new THREE.DodecahedronGeometry(0.5, 0);
-const ROCK_LG    = new THREE.DodecahedronGeometry(0.9, 1);
+const ROCK_SM = new THREE.DodecahedronGeometry(0.5, 0);
+const ROCK_LG = new THREE.DodecahedronGeometry(0.9, 1);
 
 
-const trunkMat      = new THREE.MeshPhongMaterial({ color: 0x4a3728 });
-const canopyMat     = new THREE.MeshPhongMaterial({ color: 0x2d5a27 });
+const trunkMat = new THREE.MeshPhongMaterial({ color: 0x4a3728 });
+const canopyMat = new THREE.MeshPhongMaterial({ color: 0x2d5a27 });
 const canopyDarkMat = new THREE.MeshPhongMaterial({ color: 0x1e4a1a });
-const rockMat       = new THREE.MeshPhongMaterial({ color: 0x6b6b6b, flatShading: true });
-const rockDarkMat   = new THREE.MeshPhongMaterial({ color: 0x505050, flatShading: true });
+const rockMat = new THREE.MeshPhongMaterial({ color: 0x6b6b6b, flatShading: true });
+const rockDarkMat = new THREE.MeshPhongMaterial({ color: 0x505050, flatShading: true });
 
 // Snowman materials
 const snowballMat = new THREE.MeshPhongMaterial({ color: 0xf0f0f0 });
-const carrotMat   = new THREE.MeshPhongMaterial({ color: 0xe87020 });
-const coalMat     = new THREE.MeshPhongMaterial({ color: 0x111111 });
-const stickMat    = new THREE.MeshPhongMaterial({ color: 0x5a3a1a });
+const carrotMat = new THREE.MeshPhongMaterial({ color: 0xe87020 });
+const coalMat = new THREE.MeshPhongMaterial({ color: 0x111111 });
+const stickMat = new THREE.MeshPhongMaterial({ color: 0x5a3a1a });
 
 // Fallen log materials
-const barkMat     = new THREE.MeshPhongMaterial({ color: 0x5c3d1e });
+const barkMat = new THREE.MeshPhongMaterial({ color: 0x5c3d1e });
 const barkDarkMat = new THREE.MeshPhongMaterial({ color: 0x3e2912 });
 
 // Stump material (reuses barkMat)
 const stumpRingMat = new THREE.MeshPhongMaterial({ color: 0x9e7e5a });
 
 // Fence materials
-const fencePostMat  = new THREE.MeshPhongMaterial({ color: 0x6e4b2a });
+const fencePostMat = new THREE.MeshPhongMaterial({ color: 0x6e4b2a });
 const fencePlankMat = new THREE.MeshPhongMaterial({ color: 0x8b6841 });
 
 // Shared geometries for new obstacles
 const SNOWBALL_BOT = new THREE.SphereGeometry(0.38, 12, 10);
 const SNOWBALL_MID = new THREE.SphereGeometry(0.28, 12, 10);
 const SNOWBALL_TOP = new THREE.SphereGeometry(0.20, 12, 10);
-const CARROT_GEO   = new THREE.ConeGeometry(0.04, 0.18, 6);
-const COAL_GEO     = new THREE.SphereGeometry(0.03, 6, 6);
-const STICK_GEO    = new THREE.CylinderGeometry(0.015, 0.012, 0.32, 5);
+const CARROT_GEO = new THREE.ConeGeometry(0.04, 0.18, 6);
+const COAL_GEO = new THREE.SphereGeometry(0.03, 6, 6);
+const STICK_GEO = new THREE.CylinderGeometry(0.015, 0.012, 0.32, 5);
 
-const LOG_GEO      = new THREE.CylinderGeometry(0.18, 0.20, 2.0, 10);
-const LOG_LG_GEO   = new THREE.CylinderGeometry(0.22, 0.25, 2.8, 10);
+const LOG_GEO = new THREE.CylinderGeometry(0.18, 0.20, 2.0, 10);
+const LOG_LG_GEO = new THREE.CylinderGeometry(0.22, 0.25, 2.8, 10);
 
-const STUMP_GEO    = new THREE.CylinderGeometry(0.22, 0.28, 0.35, 10);
-const STUMP_TOP    = new THREE.CylinderGeometry(0.21, 0.22, 0.04, 10);
+const STUMP_GEO = new THREE.CylinderGeometry(0.22, 0.28, 0.35, 10);
+const STUMP_TOP = new THREE.CylinderGeometry(0.21, 0.22, 0.04, 10);
 
-const FENCE_POST_GEO  = new THREE.BoxGeometry(0.10, 0.90, 0.10);
+const FENCE_POST_GEO = new THREE.BoxGeometry(0.10, 0.90, 0.10);
 const FENCE_PLANK_GEO = new THREE.BoxGeometry(0.06, 0.08, 1.8);
 
 // Lantern on top of lit fence posts
 const LANTERN_GEO = new THREE.BoxGeometry(0.12, 0.14, 0.12);
-const lanternMat  = new THREE.MeshPhongMaterial({
-    color:    0xffcc66,
+const lanternMat = new THREE.MeshPhongMaterial({
+    color: 0xffcc66,
     emissive: 0xffaa33,
     emissiveIntensity: 1.5,
 });
@@ -93,10 +93,13 @@ function createTree() {
 
     group.add(trunk, c1, c2, c3);
 
-    // Random scale for visual variety
-    const s = 0.7 + Math.random() * 0.5;
-    group.scale.set(s, s, s);
-    group.userData.collisionRadius = 0.35 * s;
+    // Non-uniform scaling: the horizontal factor (s) controls width
+    // while the vertical factor (sY) is independent and larger, producing
+    // taller trees with random height variation across the forest.
+    const s = 1.0 + Math.random() * 0.6;
+    const sY = 1.4 + Math.random() * 0.8;
+    group.scale.set(s, sY, s); // Object3D.scale(sx, sy, sz) -- non-uniform: sY stretches height
+    group.userData.collisionRadius = 0.45 * s;
 
     return group;
 }
@@ -117,7 +120,10 @@ function createRock() {
     rock.castShadow = true;
 
     group.add(rock);
-    group.userData.collisionRadius = isLarge ? 0.75 : 0.4;
+
+    const s = 1.2 + Math.random() * 0.4;
+    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
+    group.userData.collisionRadius = (isLarge ? 0.75 : 0.4) * s;
 
     return group;
 }
@@ -170,9 +176,10 @@ function createSnowman() {
     // Slight random rotation so they don't all face the same way
     group.rotation.y = Math.random() * Math.PI * 2;
 
-    const s = 0.85 + Math.random() * 0.3;
-    group.scale.set(s, s, s);
-    group.userData.collisionRadius = 0.4 * s;
+    // Uniform scale for variety 
+    const s = 1.1 + Math.random() * 0.4;
+    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
+    group.userData.collisionRadius = 0.5 * s;
 
     return group;
 }
@@ -198,7 +205,10 @@ function createFallenLog() {
     // Random rotation around Y so logs point in different directions
     group.rotation.y = Math.random() * Math.PI;
 
-    group.userData.collisionRadius = isLarge ? 0.9 : 0.7;
+    // Scale up for better visual presence 
+    const s = 1.2 + Math.random() * 0.3;
+    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
+    group.userData.collisionRadius = (isLarge ? 0.9 : 0.7) * s;
 
     return group;
 }
@@ -219,9 +229,10 @@ function createStump() {
 
     group.add(stump, top);
 
-    const s = 0.8 + Math.random() * 0.4;
-    group.scale.set(s, s, s);
-    group.userData.collisionRadius = 0.3 * s;
+    // Uniform scale for variety 
+    const s = 1.1 + Math.random() * 0.5;
+    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
+    group.userData.collisionRadius = 0.4 * s;
 
     return group;
 }
@@ -257,7 +268,10 @@ function createFence() {
     // Random rotation so fences face different directions
     group.rotation.y = Math.random() * Math.PI;
 
-    group.userData.collisionRadius = 0.9;
+    // Scale up for better visual presence 
+    const s = 1.2 + Math.random() * 0.2;
+    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
+    group.userData.collisionRadius = 0.9 * s;
 
     return group;
 }
@@ -302,7 +316,11 @@ function createLitFence() {
     group.add(postL, postR, plankTop, plankBot, lanternL, lanternR);
 
     group.rotation.y = Math.random() * Math.PI;
-    group.userData.collisionRadius = 0.9;
+
+    // Scale up for better visual presence 
+    const s = 1.2 + Math.random() * 0.2;
+    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
+    group.userData.collisionRadius = 0.9 * s;
     group.userData.isLitFence = true;
 
     return group;
@@ -351,7 +369,7 @@ export function populateChunk(chunkGroup, chunkLength, chunkWidth, score, isNigh
 
     const obstacles = [];
     const count = minCount + Math.floor(Math.random() * (maxCount - minCount + 1));
-    const halfW = chunkWidth  / 2 - EDGE_MARGIN;
+    const halfW = chunkWidth / 2 - EDGE_MARGIN;
     const halfL = chunkLength / 2 - EDGE_MARGIN;
 
     for (let i = 0; i < count; i++) {
