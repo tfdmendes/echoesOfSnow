@@ -4,7 +4,7 @@ import {
     createTerrain, updateTerrain, setSnowTexture, makeSnowTexture,
     CHUNK_LENGTH, CHUNK_WIDTH
 } from './terrain.js';
-import { populateChunk, clearChunk, checkCollisions } from './obstacles.js';
+import { populateChunk, clearChunk, checkCollisions, lanternMat, lamppostBulbMat } from './obstacles.js';
 
 
 // ============================================================
@@ -70,21 +70,21 @@ scene.add(ambientLight);
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
 sunLight.castShadow = true;
 
-// Larger shadow map for sharper shadows
-sunLight.shadow.mapSize.width  = 4096;
-sunLight.shadow.mapSize.height = 4096;
+// Higher resolution shadow map to compensate for the large frustum
+sunLight.shadow.mapSize.width  = 8192;
+sunLight.shadow.mapSize.height = 8192;
 
-// The shadow camera uses an orthographic frustum that defines the volume
-// where shadows are computed. Objects outside this box cast no shadow.
-// The frustum is sized to match the maximum fog distance (~290) so that
-// every visible obstacle casts a shadow. Going beyond fog range would
-// waste shadow map resolution on areas the player cannot see.
+// Symmetric frustum sized to match the maximum fog distance (~290).
+// ±150 covers 300 units in every direction from the sunTarget (skier),
+// so every visible obstacle casts a shadow. The sun orbits, which
+// rotates the frustum's local axes, but symmetry guarantees the same
+// ground coverage at any angle. Beyond fog, shadows are invisible anyway.
 sunLight.shadow.camera.near   = 1;
-sunLight.shadow.camera.far    = 800;
-sunLight.shadow.camera.left   = -120;
-sunLight.shadow.camera.right  = 120;
-sunLight.shadow.camera.top    = 300;
-sunLight.shadow.camera.bottom = -100;
+sunLight.shadow.camera.far    = 500;
+sunLight.shadow.camera.left   = -150;
+sunLight.shadow.camera.right  = 150;
+sunLight.shadow.camera.top    = 150;
+sunLight.shadow.camera.bottom = -150;
 
 // The sun looks at this target, which follows the skier.
 // This keeps the shadow frustum centered on the action
@@ -96,13 +96,14 @@ sunLight.target = sunTarget;
 scene.add(sunLight);
 
 // Pool of PointLights reused each frame. Instead of attaching a light
-// to every lit fence (expensive), we keep just 6 lights and move them
-// to whichever fences are closest to the skier. The emissive lantern
-// material handles the visual glow on all the others for free.
-const NIGHT_LIGHT_COUNT = 6;
+// to every lit obstacle (expensive), we keep a small fixed pool and move
+// them to whichever light sources are closest to the skier. The emissive
+// materials handle the visual glow on all the others for free.
+// 10 lights gives good coverage without hurting performance.
+const NIGHT_LIGHT_COUNT = 10;
 const nightLights = [];
 for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
-    const pl = new THREE.PointLight(0xffaa44, 0, 12, 1.5);
+    const pl = new THREE.PointLight(0xffaa44, 0, 14, 1.5);
     scene.add(pl);
     nightLights.push(pl);
 }
@@ -301,7 +302,6 @@ function updateCycle(normalizedTime) {
     // Offset the sun position relative to the skier so shadows follow the action
     sunLight.position.x += sunTarget.position.x;
     sunLight.position.z += sunTarget.position.z;
-
 
     // Place the sun mesh and glow at the same world position as the light source.
     // The light position already includes the skier offset applied above.
@@ -512,8 +512,18 @@ function animate(now) {
     // the sun: when the sun drops below 0.5, they start fading in.
     const nightFactor = Math.max(0, 1.0 - sunLight.intensity / 0.5);
 
+    // Fade the emissive materials in sync with the pool lights.
+    // During daytime nightFactor is 0 so emissive turns off completely;
+    // at full night it reaches 1.0 and emissive is at full strength.
+    // This guarantees that whenever a lantern or bulb *looks* lit,
+    // the pool lights are also active -- no more glowing without light.
+    lanternMat.emissiveIntensity      = nightFactor * 1.5;
+    lamppostBulbMat.emissiveIntensity = nightFactor * 2.5;
+
     if (nightFactor > 0) {
-        // Collect world positions of all lit fences across all chunks
+        // Collect world positions of all lit obstacles (fences and lampposts).
+        // Lampposts get a higher Y and stronger intensity than fences
+        // because their bulb sits at ~4.2 units, far above fence lanterns.
         const litPositions = [];
         for (const chunk of chunks) {
             const obs = chunk.userData.obstacles || [];
@@ -523,7 +533,15 @@ function animate(now) {
                     const wz = chunk.position.z + ob.localZ;
                     const dx = skier.position.x - wx;
                     const dz = skier.position.z - wz;
-                    litPositions.push({ x: wx, z: wz, dist: dx * dx + dz * dz });
+                    litPositions.push({ x: wx, z: wz, y: 1.1, intensity: 2.2, dist: dx * dx + dz * dz });
+                }
+                if (ob.mesh.userData.isLamppost) {
+                    const offsetX = ob.mesh.userData.lampOffsetX || 0;
+                    const wx = chunk.position.x + ob.localX + offsetX;
+                    const wz = chunk.position.z + ob.localZ;
+                    const dx = skier.position.x - wx;
+                    const dz = skier.position.z - wz;
+                    litPositions.push({ x: wx, z: wz, y: 4.2, intensity: 3.5, dist: dx * dx + dz * dz });
                 }
             }
         }
@@ -531,13 +549,13 @@ function animate(now) {
         // Sort by distance to skier, closest first
         litPositions.sort((a, b) => a.dist - b.dist);
 
-        // Assign pool lights to the nearest lit fences
+        // Assign pool lights to the nearest lit obstacles
         for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
             if (i < litPositions.length) {
-                nightLights[i].position.set(litPositions[i].x, 1.1, litPositions[i].z);
-                nightLights[i].intensity = nightFactor * 2.2;
+                const lp = litPositions[i];
+                nightLights[i].position.set(lp.x, lp.y, lp.z);
+                nightLights[i].intensity = nightFactor * lp.intensity;
             } else {
-                // No fence to assign, turn off this pool light
                 nightLights[i].intensity = 0;
             }
         }

@@ -66,6 +66,24 @@ const lanternMat = new THREE.MeshPhongMaterial({
     emissiveIntensity: 1.5,
 });
 
+// Lamppost shared geometries and materials
+const LAMPPOST_POLE_GEO    = new THREE.CylinderGeometry(0.05, 0.09, 4.5, 8); // CylinderGeometry(radiusTop, radiusBottom, height, segments) -- tapers toward the top
+const LAMPPOST_ARM_GEO     = new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6); // CylinderGeometry(radiusTop, radiusBottom, height, segments)
+const LAMPPOST_HOOD_GEO    = new THREE.ConeGeometry(0.28, 0.18, 8); // ConeGeometry(radius, height, segments) -- downward-facing shade
+const LAMPPOST_BULB_GEO    = new THREE.SphereGeometry(0.14, 10, 8); // SphereGeometry(radius, widthSegments, heightSegments)
+const LAMPPOST_BASE_GEO    = new THREE.CylinderGeometry(0.20, 0.26, 0.15, 10); // CylinderGeometry(radiusTop, radiusBottom, height, segments)
+const LAMPPOST_COLLAR_GEO  = new THREE.CylinderGeometry(0.08, 0.06, 0.10, 8); // CylinderGeometry(radiusTop, radiusBottom, height, segments) -- joint between pole and arm
+
+const lamppostPoleMat = new THREE.MeshPhongMaterial({ color: 0x3a3a3a, shininess: 60 });
+const lamppostHoodMat = new THREE.MeshPhongMaterial({ color: 0x2a2a2a, shininess: 40 });
+const lamppostBulbMat = new THREE.MeshPhongMaterial({
+    color:             0xffeecc,
+    emissive:          0xffcc55,
+    emissiveIntensity: 2.5,
+    transparent:       true,
+    opacity:           0.92,
+});
+
 
 
 // Pine tree: 3 layered cones + trunk
@@ -328,33 +346,102 @@ function createLitFence() {
 
 
 
+// Lampposts use the same PointLight pooling system as lit fences (scene.js)
+// instead of carrying individual lights. The emissive bulb material provides
+// the visual glow for free, and the pooled lights handle actual illumination.
+// This avoids creating 15-20 PointLights at night which would tank framerate.
+// spawnX is the local X position within the chunk so the arm
+// can point toward the center of the slope (inward).
+function createLamppost(spawnX) {
+    const group = new THREE.Group();
+
+    // Posts on the left half of the slope (spawnX > 0) extend their
+    // arm to the right (-X, toward center). Posts on the right half
+    // extend to the left (+X, toward center). This way the lamp
+    // always illuminates the ski path rather than the edge.
+    const side = (spawnX > 0) ? -1 : 1;
+
+    // Sturdy base
+    const base = new THREE.Mesh(LAMPPOST_BASE_GEO, lamppostPoleMat);
+    base.position.y = 0.075;
+    base.castShadow = true;
+
+    // Tall vertical pole tapering toward the top
+    const pole = new THREE.Mesh(LAMPPOST_POLE_GEO, lamppostPoleMat);
+    pole.position.y = 2.325;
+    pole.castShadow = true;
+
+    // Collar joint where the arm meets the pole
+    const collar = new THREE.Mesh(LAMPPOST_COLLAR_GEO, lamppostPoleMat);
+    collar.position.set(0, 4.55, 0);
+
+    // Horizontal arm extending to one side.
+    // Rotated 90 degrees on Z so the cylinder lies flat along X.
+    const arm = new THREE.Mesh(LAMPPOST_ARM_GEO, lamppostPoleMat);
+    arm.position.set(0.5 * side, 4.55, 0);
+    arm.rotation.z = Math.PI / 2;
+    arm.castShadow = true;
+
+    // Downward-facing conical hood (shade) at the end of the arm
+    const hood = new THREE.Mesh(LAMPPOST_HOOD_GEO, lamppostHoodMat);
+    hood.position.set(0.95 * side, 4.48, 0);
+    hood.rotation.x = Math.PI;
+    hood.castShadow = true;
+
+    // Glowing bulb hanging just below the hood.
+    // The emissive material makes it glow visually at zero lighting cost.
+    const bulb = new THREE.Mesh(LAMPPOST_BULB_GEO, lamppostBulbMat);
+    bulb.position.set(0.95 * side, 4.28, 0);
+
+    group.add(base, pole, collar, arm, hood, bulb);
+
+    group.rotation.y = 0;
+
+    group.userData.collisionRadius = 0.3;
+    group.userData.isLamppost = true;
+    // Store the bulb's local X offset so scene.js can position
+    // the pool light at the correct side of the arm
+    group.userData.lampOffsetX = 0.95 * side;
+
+    return group;
+}
+
+
+
 // Weighted random selection across all obstacle types.
 // Trees are still the most common since they define the visual theme.
 //
-// During day:
-//   tree 30%  |  rock 15%  |  snowman 15%
-//   log  15%  |  stump 10% |  fence 15%
+// Lit fences and lampposts can spawn at any time of day. During daytime
+// their emissive glow is turned off by scene.js; at night it fades in.
 //
-// During night: regular fences become lit fences, and their
-// spawn rate goes up to 25% so the slope is dotted with lights.
-//   tree 25%  |  rock 12%  |  snowman 12%
-//   log  13%  |  stump 13% |  litFence 25%
-function pickObstacle(isNight) {
+// During day:
+//   tree 28%  |  rock 13%  |  snowman 13%
+//   log  13%  |  stump 8%  |  fence 10%  |  litFence 8%  |  lamppost 7%
+//
+// During night: light-bearing obstacles are much more common.
+//   tree 18%  |  rock 8%   |  snowman 8%
+//   log  8%   |  stump 8%  |  litFence 25%  |  lamppost 25%
+// spawnX is passed through so lampposts know which half of the
+// slope they are on and can point their arm toward the center.
+function pickObstacle(isNight, spawnX) {
     const r = Math.random();
     if (isNight) {
-        if (r < 0.25) return createTree();
-        if (r < 0.37) return createRock();
-        if (r < 0.49) return createSnowman();
-        if (r < 0.62) return createFallenLog();
-        if (r < 0.75) return createStump();
-        return createLitFence();
+        if (r < 0.18) return createTree();
+        if (r < 0.26) return createRock();
+        if (r < 0.34) return createSnowman();
+        if (r < 0.42) return createFallenLog();
+        if (r < 0.50) return createStump();
+        if (r < 0.75) return createLitFence();
+        return createLamppost(spawnX);
     }
-    if (r < 0.30) return createTree();
-    if (r < 0.45) return createRock();
-    if (r < 0.60) return createSnowman();
-    if (r < 0.75) return createFallenLog();
-    if (r < 0.85) return createStump();
-    return createFence();
+    if (r < 0.28) return createTree();
+    if (r < 0.41) return createRock();
+    if (r < 0.54) return createSnowman();
+    if (r < 0.67) return createFallenLog();
+    if (r < 0.75) return createStump();
+    if (r < 0.85) return createFence();
+    if (r < 0.93) return createLitFence();
+    return createLamppost(spawnX);
 }
 
 
@@ -387,7 +474,7 @@ export function populateChunk(chunkGroup, chunkLength, chunkWidth, score, isNigh
         }
         if (tooClose) continue;
 
-        const mesh = pickObstacle(isNight);
+        const mesh = pickObstacle(isNight, lx);
         mesh.position.set(lx, 0, lz);
         chunkGroup.add(mesh);
 
@@ -432,3 +519,8 @@ export function checkCollisions(skierPos, chunks) {
     }
     return false;
 }
+
+
+// Exported so scene.js can fade the emissive glow on/off with the
+// day/night cycle instead of the materials being permanently lit.
+export { lanternMat, lamppostBulbMat };
