@@ -117,7 +117,7 @@ function createTree() {
     const s = 1.0 + Math.random() * 0.6;
     const sY = 1.4 + Math.random() * 0.8;
     group.scale.set(s, sY, s); // Object3D.scale(sx, sy, sz) -- non-uniform: sY stretches height
-    group.userData.collisionRadius = 0.45 * s;
+    group.userData.collisionRadius = 0.3 * s;
 
     return group;
 }
@@ -141,7 +141,7 @@ function createRock() {
 
     const s = 1.2 + Math.random() * 0.4;
     group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
-    group.userData.collisionRadius = (isLarge ? 0.75 : 0.4) * s;
+    group.userData.collisionRadius = (isLarge ? 0.65 : 0.35) * s;
 
     return group;
 }
@@ -197,14 +197,16 @@ function createSnowman() {
     // Uniform scale for variety 
     const s = 1.1 + Math.random() * 0.4;
     group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
-    group.userData.collisionRadius = 0.5 * s;
+    group.userData.collisionRadius = 0.4 * s;
 
     return group;
 }
 
 
 
-// Fallen log: horizontal cylinder lying on the ground
+// Fallen log: horizontal cylinder lying on the ground.
+// Uses oriented-box collision instead of a circle because a circle
+// around a long thin object creates huge dead zones at the sides.
 function createFallenLog() {
     const group = new THREE.Group();
 
@@ -213,20 +215,22 @@ function createFallenLog() {
     const mat = Math.random() > 0.5 ? barkMat : barkDarkMat;
 
     const log = new THREE.Mesh(geo, mat);
-    // Rotate so it lies flat along X axis
     log.rotation.z = Math.PI / 2;
     log.position.y = isLarge ? 0.25 : 0.20;
     log.castShadow = true;
 
     group.add(log);
 
-    // Random rotation around Y so logs point in different directions
-    group.rotation.y = Math.random() * Math.PI;
+    const angle = Math.random() * Math.PI;
+    group.rotation.y = angle;
 
-    // Scale up for better visual presence 
     const s = 1.2 + Math.random() * 0.3;
-    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
-    group.userData.collisionRadius = (isLarge ? 0.9 : 0.7) * s;
+    group.scale.set(s, s, s);
+
+    // Half-extents along the log's local axes (length/2, radius)
+    const halfLen = (isLarge ? 1.4 : 1.0) * s;
+    const halfW   = (isLarge ? 0.30 : 0.25) * s;
+    group.userData.collisionBox = { halfLen, halfW, cos: Math.cos(angle), sin: Math.sin(angle) };
 
     return group;
 }
@@ -250,46 +254,46 @@ function createStump() {
     // Uniform scale for variety 
     const s = 1.1 + Math.random() * 0.5;
     group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
-    group.userData.collisionRadius = 0.4 * s;
+    group.userData.collisionRadius = 0.3 * s;
 
     return group;
 }
 
 
 
-// Wooden fence: two posts with two horizontal planks between them
+// Wooden fence: two posts with two horizontal planks between them.
+// Uses oriented-box collision (planks span 1.8 along Z, ~0.10 thick).
 function createFence() {
     const group = new THREE.Group();
 
-    // Left post
     const postL = new THREE.Mesh(FENCE_POST_GEO, fencePostMat);
     postL.position.set(0, 0.45, -0.85);
     postL.castShadow = true;
 
-    // Right post
     const postR = new THREE.Mesh(FENCE_POST_GEO, fencePostMat);
     postR.position.set(0, 0.45, 0.85);
     postR.castShadow = true;
 
-    // Top plank connecting the two posts
     const plankTop = new THREE.Mesh(FENCE_PLANK_GEO, fencePlankMat);
     plankTop.position.set(0, 0.72, 0);
     plankTop.castShadow = true;
 
-    // Bottom plank
     const plankBot = new THREE.Mesh(FENCE_PLANK_GEO, fencePlankMat);
     plankBot.position.set(0, 0.35, 0);
     plankBot.castShadow = true;
 
     group.add(postL, postR, plankTop, plankBot);
 
-    // Random rotation so fences face different directions
-    group.rotation.y = Math.random() * Math.PI;
+    const angle = Math.random() * Math.PI;
+    group.rotation.y = angle;
 
-    // Scale up for better visual presence 
     const s = 1.2 + Math.random() * 0.2;
-    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
-    group.userData.collisionRadius = 0.9 * s;
+    group.scale.set(s, s, s);
+
+    // Fence planks: 1.8 long (Z), 0.10 thick (X) — half-extents
+    const halfLen = 0.95 * s;
+    const halfW   = 0.20 * s;
+    group.userData.collisionBox = { halfLen, halfW, cos: Math.cos(angle), sin: Math.sin(angle) };
 
     return group;
 }
@@ -333,12 +337,15 @@ function createLitFence() {
 
     group.add(postL, postR, plankTop, plankBot, lanternL, lanternR);
 
-    group.rotation.y = Math.random() * Math.PI;
+    const angle = Math.random() * Math.PI;
+    group.rotation.y = angle;
 
-    // Scale up for better visual presence 
     const s = 1.2 + Math.random() * 0.2;
-    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
-    group.userData.collisionRadius = 0.9 * s;
+    group.scale.set(s, s, s);
+
+    const halfLen = 0.95 * s;
+    const halfW   = 0.20 * s;
+    group.userData.collisionBox = { halfLen, halfW, cos: Math.cos(angle), sin: Math.sin(angle) };
     group.userData.isLitFence = true;
 
     return group;
@@ -482,7 +489,8 @@ export function populateChunk(chunkGroup, chunkLength, chunkWidth, score, isNigh
             mesh,
             localX: lx,
             localZ: lz,
-            radius: mesh.userData.collisionRadius
+            radius: mesh.userData.collisionRadius,
+            box:    mesh.userData.collisionBox || null
         });
     }
 
@@ -507,13 +515,32 @@ export function checkCollisions(skierPos, chunks) {
         for (const ob of obs) {
             const wx = chunk.position.x + ob.localX;
             const wz = chunk.position.z + ob.localZ;
-
             const dx = skierPos.x - wx;
             const dz = skierPos.z - wz;
-            const dist = Math.sqrt(dx * dx + dz * dz);
 
-            if (dist < SKIER_RADIUS + ob.radius) {
-                return true;
+            if (ob.box) {
+                // Oriented-box vs circle collision.
+                // Rotate the skier position into the box's local frame,
+                // then do a standard AABB-vs-circle test.
+                const b = ob.box;
+                const localX = dx * b.cos + dz * b.sin;
+                const localZ = -dx * b.sin + dz * b.cos;
+
+                // Closest point on the box to the skier (clamped)
+                const cx = Math.max(-b.halfW, Math.min(b.halfW, localX));
+                const cz = Math.max(-b.halfLen, Math.min(b.halfLen, localZ));
+
+                const ex = localX - cx;
+                const ez = localZ - cz;
+                if (ex * ex + ez * ez < SKIER_RADIUS * SKIER_RADIUS) {
+                    return true;
+                }
+            } else {
+                // Simple circle-vs-circle
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist < SKIER_RADIUS + ob.radius) {
+                    return true;
+                }
             }
         }
     }

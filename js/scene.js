@@ -35,6 +35,9 @@ let lastTime  = performance.now();
 
 const keys = { left: false, right: false };
 
+let camMode = 0;                    // 0 = behind, 1 = first-person, 2 = facing
+const camLook = new THREE.Vector3(0, 0.8, 4);  // smoothed lookAt target
+
 
 // ============================================================
 //  RENDERER, SCENE, CAMERA
@@ -378,7 +381,8 @@ document.body.appendChild(overlay);
 document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = true;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
-if (e.code === 'KeyR' && gameState === 'gameover') restartGame();
+    if (e.code === 'KeyT') { camMode = (camMode + 1) % 3; }
+    if (e.code === 'KeyR' && gameState === 'gameover') restartGame();
 });
 
 document.addEventListener('keyup', (e) => {
@@ -436,6 +440,8 @@ function restartGame() {
     }
 
     camera.position.set(0, 3, -5);
+    camLook.set(0, 0.8, 4);
+    camMode = 0;
     gameState = 'playing';
     overlay.style.opacity = '0';
 }
@@ -553,18 +559,42 @@ function animate(now) {
         }
     }
 
-    // -- Dynamic camera --
-    const camTargetX = skier.position.x * 0.85;
-    camera.position.x += (camTargetX - camera.position.x) * 0.12;
-
+    // -- Dynamic camera (3 modes, smooth transitions) --
+    // Uses exponential damping: 1 - e^(-speed * dt) gives a frame-rate
+    // independent smoothing factor that feels identical at 30 or 144 fps.
     const speedFactor = (gameSpeed - SPEED_INITIAL) / 30;
-    const camTargetY  = 3.0 + speedFactor * 1.8;
-    camera.position.y += (camTargetY - camera.position.y) * 0.04;
+    let targetPos, targetLook;
 
-    const camTargetZ  = -5.0 - speedFactor * 2.5;
-    camera.position.z += (camTargetZ - camera.position.z) * 0.04;
+    if (camMode === 0) {
+        // Behind (original)
+        targetPos  = { x: skier.position.x * 0.85,
+                       y: 3.0 + speedFactor * 1.8,
+                       z: -5.0 - speedFactor * 2.5 };
+        targetLook = { x: skier.position.x * 0.6, y: 0.8, z: 4 };
+    } else if (camMode === 1) {
+        // First-person
+        targetPos  = { x: skier.position.x, y: 1.2, z: 0.3 };
+        targetLook = { x: skier.position.x, y: 0.8, z: 10 };
+    } else {
+        // Facing skier (from the front)
+        targetPos  = { x: skier.position.x * 0.85,
+                       y: 3.0 + speedFactor * 1.8,
+                       z: 10 + speedFactor * 2.5 };
+        targetLook = { x: skier.position.x, y: 0.8, z: 0 };
+    }
 
-    camera.lookAt(skier.position.x * 0.6, 0.8, 4);
+    // Frame-rate independent damping (higher = snappier, ~4 gives a smooth glide)
+    const smooth = 1 - Math.exp(-4 * delta);
+
+    camera.position.x += (targetPos.x - camera.position.x) * smooth;
+    camera.position.y += (targetPos.y - camera.position.y) * smooth;
+    camera.position.z += (targetPos.z - camera.position.z) * smooth;
+
+    // Smooth the lookAt target the same way so it never desyncs from position
+    camLook.x += (targetLook.x - camLook.x) * smooth;
+    camLook.y += (targetLook.y - camLook.y) * smooth;
+    camLook.z += (targetLook.z - camLook.z) * smooth;
+    camera.lookAt(camLook);
 
     renderer.render(scene, camera);
 }
