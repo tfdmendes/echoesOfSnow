@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { skier, animateSkier } from './skier.js';
 import {
-    createTerrain, updateTerrain, setSnowTexture, makeSnowTexture,
+    createTerrain, updateTerrain,
     CHUNK_LENGTH, CHUNK_WIDTH
 } from './terrain.js';
 import { populateChunk, clearChunk, checkCollisions, lanternMat, lamppostBulbMat } from './obstacles.js';
@@ -346,15 +346,6 @@ for (let i = SAFE_CHUNKS; i < chunks.length; i++) {
     populateChunk(chunks[i], CHUNK_LENGTH, CHUNK_WIDTH, 0, false);
 }
 
-const textures = [
-    makeSnowTexture(0),
-    makeSnowTexture(1),
-    makeSnowTexture(2),
-];
-
-let texIndex = 0;
-setSnowTexture(chunks, textures[0]);
-
 
 // ============================================================
 //  HUD & GAME OVER OVERLAY
@@ -387,11 +378,7 @@ document.body.appendChild(overlay);
 document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = true;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
-    if (e.code === 'KeyT') {
-        texIndex = (texIndex + 1) % textures.length;
-        setSnowTexture(chunks, textures[texIndex]);
-    }
-    if (e.code === 'KeyR' && gameState === 'gameover') restartGame();
+if (e.code === 'KeyR' && gameState === 'gameover') restartGame();
 });
 
 document.addEventListener('keyup', (e) => {

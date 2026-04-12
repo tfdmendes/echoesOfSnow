@@ -42,6 +42,9 @@ function frontZ(chunks) {
 
 
 export function createTerrain(scene) {
+    snowMaterial.map = makeSnowTexture();
+    snowMaterial.needsUpdate = true;
+
     const chunks = [];
     for (let i = 0; i < POOL_SIZE; i++) {
         const chunk = createChunk();
@@ -70,31 +73,16 @@ export function updateTerrain(chunks, speed, delta, onRecycle) {
 }
 
 
-// Swaps the snow texture on all chunks
-// The loop lives here because snowMaterial is private to this module.
-export function setSnowTexture(chunks, texture) {
-    snowMaterial.map = texture;
-    snowMaterial.needsUpdate = true;
-}
-
-
-
 // Generates a procedural snow texture on a canvas.
-// variant 0 = dry snow (warm white), 1 = icy snow (blue tint), 2 = packed snow (grey)
-export function makeSnowTexture(variant) {
+function makeSnowTexture() {
     const size   = 512;
     const canvas = document.createElement('canvas');
     canvas.width  = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
 
-    // Base colours per variant -> [r, g, b] range centers
-    const bases = [
-        [252, 254, 255],   // dry - near-pure white
-        [236, 246, 255],   // icy - very subtle cold blue
-        [241, 243, 245],   // packed - barely-grey
-    ];
-    const base = bases[variant] || bases[0];
+    // Base colour: dry snow (warm white)
+    const base = [252, 254, 255];
 
     // Build a coarse grid of random offsets and interpolate between them.
     // This produces smooth low-frequency variation -- the "bumps" feeling.
