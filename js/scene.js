@@ -30,7 +30,7 @@ const CYCLE_DURATION = 180;
 let score     = 0;
 let elapsed   = 0;
 let gameSpeed = SPEED_INITIAL;
-let gameState = 'playing';
+let gameState = 'menu';
 let lastTime  = performance.now();
 
 const keys = { left: false, right: false };
@@ -358,7 +358,7 @@ const hud = document.createElement('div');
 hud.style.cssText =
     'position:fixed; top:16px; left:16px; color:#fff; font:bold 18px monospace;' +
     'text-shadow:0 1px 3px rgba(0,0,0,0.6); pointer-events:none; z-index:10;' +
-    'line-height:1.6;';
+    'line-height:1.6; display:none;';
 document.body.appendChild(hud);
 
 const overlay = document.createElement('div');
@@ -375,6 +375,105 @@ document.body.appendChild(overlay);
 
 
 // ============================================================
+//  MAIN MENU OVERLAY
+// ============================================================
+//
+// The menu is a DOM overlay following the same pattern as the HUD and
+// game-over overlay above. 
+
+// Inject CSS keyframes into the document <head>
+const menuStyleSheet = document.createElement('style');
+menuStyleSheet.textContent = `
+    @keyframes snowfall {
+        0%   { transform: translateY(-10vh) rotate(0deg); opacity: 0; }
+        10%  { opacity: 1; }
+        90%  { opacity: 0.8; }
+        100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+    }
+    @keyframes pulseText {
+        0%, 100% { opacity: 0.5; }
+        50%      { opacity: 1.0; }
+    }
+    @keyframes snowflakeSpin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+    }
+`;
+document.head.appendChild(menuStyleSheet);
+
+// Full-screen container -- flex centering for the title block
+const menuOverlay = document.createElement('div');
+menuOverlay.style.cssText =
+    'position:fixed; inset:0; display:flex; flex-direction:column;' +
+    'align-items:center; justify-content:center;' +
+    'background:linear-gradient(180deg, rgba(10,12,30,0.88) 0%, rgba(20,35,70,0.78) 100%);' +
+    'z-index:30; overflow:hidden; transition:opacity 0.8s;';
+
+// ---- Title: "ECHOES OF" ----
+const titleLine1 = document.createElement('div');
+titleLine1.style.cssText =
+    'font-family:Georgia,serif; font-size:clamp(18px,4vw,32px);' +
+    'letter-spacing:10px; color:#c0d0e8; opacity:0.8;' +
+    'text-shadow:0 0 15px rgba(140,180,255,0.4); user-select:none;';
+titleLine1.textContent = 'ECHOES OF';
+menuOverlay.appendChild(titleLine1);
+
+
+const titleLine2 = document.createElement('div');
+titleLine2.style.cssText =
+    'font-family:Georgia,serif; font-size:clamp(48px,12vw,96px);' +
+    'font-weight:bold; letter-spacing:14px; color:#e4edf5;' +
+    'text-shadow:0 0 30px rgba(150,200,255,0.5), 0 2px 6px rgba(0,0,0,0.8);' +
+    'margin-top:4px; user-select:none;';
+titleLine2.innerHTML =
+    'SN<span style="display:inline-block; color:#a8cce8;' +
+    'animation:snowflakeSpin 10s linear infinite;' +
+    'text-shadow:0 0 18px rgba(160,200,255,0.7);">&#10052;</span>W';
+menuOverlay.appendChild(titleLine2);
+
+// ---- "Press ENTER to start"  ----
+const startPrompt = document.createElement('div');
+startPrompt.style.cssText =
+    'margin-top:48px; font-family:sans-serif; font-size:clamp(12px,2vw,18px);' +
+    'color:#a0b8d0; letter-spacing:4px;' +
+    'animation:pulseText 2.5s ease-in-out infinite; user-select:none;';
+startPrompt.textContent = 'PRESS SPACE TO START';
+menuOverlay.appendChild(startPrompt);
+
+// ---- Controls hint at the bottom of the screen ----
+const controlsHint = document.createElement('div');
+controlsHint.style.cssText =
+    'position:absolute; bottom:32px; font-family:monospace;' +
+    'font-size:clamp(10px,1.4vw,14px); color:#7890a8; opacity:0.6;' +
+    'letter-spacing:2px; text-align:center; user-select:none;';
+controlsHint.innerHTML =
+    'A / &#8592; &mdash; Move Left &nbsp;&nbsp;&nbsp;' +
+    'D / &#8594; &mdash; Move Right &nbsp;&nbsp;&nbsp;' +
+    'T &mdash; Camera';
+menuOverlay.appendChild(controlsHint);
+
+
+const MENU_SNOWFLAKE_COUNT = 35;
+for (let i = 0; i < MENU_SNOWFLAKE_COUNT; i++) {
+    const flake = document.createElement('div');
+    const size     = 6 + Math.random() * 14;
+    const opacity  = 0.1 + Math.random() * 0.25;
+    const duration = 6 + Math.random() * 12;
+    const delay    = Math.random() * duration;
+    flake.textContent = '\u2744'; // Unicode snowflake U+2744
+    flake.style.cssText =
+        'position:absolute; pointer-events:none;' +
+        'color:rgba(200,220,255,' + opacity + ');' +
+        'font-size:' + size + 'px;' +
+        'left:' + (Math.random() * 100) + '%;' +
+        'animation:snowfall ' + duration + 's linear ' + delay + 's infinite;';
+    menuOverlay.appendChild(flake);
+}
+
+document.body.appendChild(menuOverlay);
+
+
+// ============================================================
 //  INPUT HANDLING
 // ============================================================
 
@@ -382,7 +481,8 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = true;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
     if (e.code === 'KeyT') { camMode = (camMode + 1) % 3; }
-    if (e.code === 'KeyR' && gameState === 'gameover') restartGame();
+    if (e.code === 'Space' && gameState === 'menu')     startGame();
+    if (e.code === 'KeyR'  && gameState === 'gameover') restartGame();
 });
 
 document.addEventListener('keyup', (e) => {
@@ -418,6 +518,18 @@ function isNightTime() {
 function onChunkRecycle(chunk) {
     clearChunk(chunk);
     populateChunk(chunk, CHUNK_LENGTH, CHUNK_WIDTH, score, isNightTime());
+}
+
+
+// Transitions from the menu screen to active gameplay.
+// Resets lastTime so the first frame delta is near zero (avoids
+// a large jump caused by time spent on the menu).
+function startGame() {
+    gameState = 'playing';
+    lastTime  = performance.now();
+    menuOverlay.style.opacity       = '0';
+    menuOverlay.style.pointerEvents = 'none';
+    hud.style.display = 'block';
 }
 
 
