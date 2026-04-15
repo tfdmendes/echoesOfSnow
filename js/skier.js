@@ -168,7 +168,9 @@ function createSkier() {
     group.add(upperBodyGroup, leftLegGroup, rightLegGroup);
 
     // base skiing stance - knees bent, upper body leaning forward
-    upperBodyGroup.rotation.x = -0.50;
+    // Matches the midpoint of animateSkier's lean range so the
+    // character doesn't appear to "grow" when the game starts.
+    upperBodyGroup.rotation.x = 0.02;
 
     leftLegGroup.rotation.x  = -0.20;
     rightLegGroup.rotation.x = -0.20;
