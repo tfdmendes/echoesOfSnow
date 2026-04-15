@@ -79,9 +79,7 @@ sunLight.shadow.mapSize.height = 8192;
 
 // Symmetric frustum sized to match the maximum fog distance (~290).
 // ±150 covers 300 units in every direction from the sunTarget (skier),
-// so every visible obstacle casts a shadow. The sun orbits, which
-// rotates the frustum's local axes, but symmetry guarantees the same
-// ground coverage at any angle. Beyond fog, shadows are invisible anyway.
+// so every visible obstacle casts a shadow. Beyond fog, shadows are invisible anyway.
 sunLight.shadow.camera.near   = 1;
 sunLight.shadow.camera.far    = 500;
 sunLight.shadow.camera.left   = -150;
@@ -89,9 +87,7 @@ sunLight.shadow.camera.right  = 150;
 sunLight.shadow.camera.top    = 150;
 sunLight.shadow.camera.bottom = -150;
 
-// The sun looks at this target, which follows the skier.
-// This keeps the shadow frustum centered on the action
-// and prevents shadows from popping in.
+// The sun looks at this target, which follows the skier
 const sunTarget = new THREE.Object3D();
 scene.add(sunTarget);
 sunLight.target = sunTarget;
