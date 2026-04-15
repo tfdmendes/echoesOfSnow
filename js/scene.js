@@ -102,7 +102,7 @@ scene.add(sunLight);
 const NIGHT_LIGHT_COUNT = 10;
 const nightLights = [];
 for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
-    const pl = new THREE.PointLight(0xffaa44, 0, 14, 1.5);
+    const pl = new THREE.PointLight(0xffaa44, 0, 28, 1.2);
     scene.add(pl);
     nightLights.push(pl);
 }
@@ -132,17 +132,18 @@ for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
 // Each keyframe: { time, skyColor, sunColor, sunIntensity, ambientColor, ambIntensity, fogNear, fogFar }
 // Colors stored as THREE.Color for easy lerp.
 const CYCLE_KEYFRAMES = [
-    { time: 0.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x1a1a30), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
-    { time: 0.05, skyColor: c(0x252540), sunColor: c(0x556688), sunIntensity: 0.30, ambientColor: c(0x1e1e35), ambientIntensity: 0.28, fogNear: 22, fogFar: 150 },
+    { time: 0.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x2a2a50), ambientIntensity: 0.40, fogNear: 20, fogFar: 140 },
+    { time: 0.05, skyColor: c(0x252540), sunColor: c(0x556688), sunIntensity: 0.30, ambientColor: c(0x252545), ambientIntensity: 0.38, fogNear: 22, fogFar: 150 },
     { time: 0.10, skyColor: c(0xd48a5a), sunColor: c(0xffaa55), sunIntensity: 0.65, ambientColor: c(0x886655), ambientIntensity: 0.35, fogNear: 25, fogFar: 180 },
     { time: 0.20, skyColor: c(0x87ceeb), sunColor: c(0xfff5e0), sunIntensity: 1.10, ambientColor: c(0x8899bb), ambientIntensity: 0.55, fogNear: 38, fogFar: 260 },
     { time: 0.42, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.25, ambientColor: c(0x99aacc), ambientIntensity: 0.60, fogNear: 42, fogFar: 290 },
     { time: 0.60, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.20, ambientColor: c(0x8899bb), ambientIntensity: 0.58, fogNear: 40, fogFar: 280 },
     { time: 0.67, skyColor: c(0xddaa66), sunColor: c(0xffcc77), sunIntensity: 1.00, ambientColor: c(0x887755), ambientIntensity: 0.48, fogNear: 32, fogFar: 220 },
-    { time: 0.77, skyColor: c(0xee7744), sunColor: c(0xff5533), sunIntensity: 0.75, ambientColor: c(0x884433), ambientIntensity: 0.38, fogNear: 22, fogFar: 170 },
+    { time: 0.77, skyColor: c(0xcc6633), sunColor: c(0xff5533), sunIntensity: 0.65, ambientColor: c(0x884433), ambientIntensity: 0.38, fogNear: 22, fogFar: 170 },
+    { time: 0.82, skyColor: c(0x774455), sunColor: c(0x887766), sunIntensity: 0.45, ambientColor: c(0x443344), ambientIntensity: 0.33, fogNear: 22, fogFar: 160 },
     { time: 0.88, skyColor: c(0x443355), sunColor: c(0x667799), sunIntensity: 0.38, ambientColor: c(0x2a2244), ambientIntensity: 0.30, fogNear: 22, fogFar: 155 },
-    { time: 0.94, skyColor: c(0x1e1e30), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x181830), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
-    { time: 1.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x1a1a30), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
+    { time: 0.94, skyColor: c(0x1e1e30), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x252545), ambientIntensity: 0.38, fogNear: 20, fogFar: 140 },
+    { time: 1.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x2a2a50), ambientIntensity: 0.40, fogNear: 20, fogFar: 140 },
 ];
 
 // Helper: create a THREE.Color from a hex int
@@ -502,7 +503,6 @@ window.addEventListener('resize', () => {
 // Returns the current position in the day/night cycle (0-1)
 function getCycleT() {
     // 0.12 makes it so that the game starts in the morning instead as of starting at night
-    // TODO: maybe add some sort of random value so that the game starts at different times of the day
     return ((elapsed / CYCLE_DURATION) + 0.12) % 1.0;
 }
 
@@ -636,7 +636,7 @@ function animate(now) {
                     const wz = chunk.position.z + ob.localZ;
                     const dx = skier.position.x - wx;
                     const dz = skier.position.z - wz;
-                    litPositions.push({ x: wx, z: wz, y: 1.1, intensity: 2.2, dist: dx * dx + dz * dz });
+                    litPositions.push({ x: wx, z: wz, y: 1.1, intensity: 4.0, dist: dx * dx + dz * dz });
                 }
                 if (ob.mesh.userData.isLamppost) {
                     const offsetX = ob.mesh.userData.lampOffsetX || 0;
@@ -644,7 +644,7 @@ function animate(now) {
                     const wz = chunk.position.z + ob.localZ;
                     const dx = skier.position.x - wx;
                     const dz = skier.position.z - wz;
-                    litPositions.push({ x: wx, z: wz, y: 4.2, intensity: 3.5, dist: dx * dx + dz * dz });
+                    litPositions.push({ x: wx, z: wz, y: 4.2, intensity: 6.0, dist: dx * dx + dz * dz });
                 }
             }
         }
