@@ -227,10 +227,9 @@ function createFallenLog() {
     const s = 1.2 + Math.random() * 0.3;
     group.scale.set(s, s, s);
 
-    // Half-extents along the log's local axes (length/2, radius)
-    const halfLen = (isLarge ? 1.4 : 1.0) * s;
-    const halfW   = (isLarge ? 0.30 : 0.25) * s;
-    group.userData.collisionBox = { halfLen, halfW, cos: Math.cos(angle), sin: Math.sin(angle) };
+    const halfLength = (isLarge ? 1.4 : 1.0) * s;   // half cylinder height
+    const radius = (isLarge ? 0.30 : 0.25) * s;  // cylinder radius
+    group.userData.collisionBox = { halfLen: radius, halfW: halfLength, cos: Math.cos(angle), sin: Math.sin(angle) };
 
     return group;
 }
