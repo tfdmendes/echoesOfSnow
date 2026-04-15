@@ -19,8 +19,8 @@ const LEAN_ANGLE     = 0.18;
 const LEAN_SPEED     = 6;
 const SAFE_CHUNKS    = 2;
 
-// Full day/night cycle duration in seconds (3 minutes)
-const CYCLE_DURATION = 180;
+// Full day/night cycle duration in seconds (~2 minutes)
+const CYCLE_DURATION = 130;
 
 
 // ============================================================
@@ -121,25 +121,27 @@ for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
 //
 // Phases (sorta):
 //   0.00        night (deep dark)
-//   0.10-0.20   dawn  (warm orange horizon)
-//   0.20-0.50   day   (bright sky, full sun)
-//   0.50-0.65   sunset (orange to red to purple)
-//   0.65-0.80   dusk  (purple fading to dark)
-//   0.80-1.00   night (wraps back to 0)
+//   0.05-0.10   dawn  (warm orange horizon)
+//   0.10-0.60   day   (bright sky, full sun)
+//   0.60-0.77   sunset (orange to red to purple)
+//   0.77-0.88   dusk  (purple fading to dark)
+//   0.88-1.00   night (wraps back to 0)
+//
+// Night is compressed to ~30s; day keeps its original duration.
 
 // Each keyframe: { time, skyColor, sunColor, sunIntensity, ambientColor, ambIntensity, fogNear, fogFar }
 // Colors stored as THREE.Color for easy lerp.
 const CYCLE_KEYFRAMES = [
     { time: 0.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x1a1a30), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
-    { time: 0.10, skyColor: c(0x252540), sunColor: c(0x556688), sunIntensity: 0.30, ambientColor: c(0x1e1e35), ambientIntensity: 0.28, fogNear: 22, fogFar: 150 },
-    { time: 0.15, skyColor: c(0xd48a5a), sunColor: c(0xffaa55), sunIntensity: 0.65, ambientColor: c(0x886655), ambientIntensity: 0.35, fogNear: 25, fogFar: 180 },
-    { time: 0.22, skyColor: c(0x87ceeb), sunColor: c(0xfff5e0), sunIntensity: 1.10, ambientColor: c(0x8899bb), ambientIntensity: 0.55, fogNear: 38, fogFar: 260 },
-    { time: 0.35, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.25, ambientColor: c(0x99aacc), ambientIntensity: 0.60, fogNear: 42, fogFar: 290 },
-    { time: 0.50, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.20, ambientColor: c(0x8899bb), ambientIntensity: 0.58, fogNear: 40, fogFar: 280 },
-    { time: 0.55, skyColor: c(0xddaa66), sunColor: c(0xffcc77), sunIntensity: 1.00, ambientColor: c(0x887755), ambientIntensity: 0.48, fogNear: 32, fogFar: 220 },
-    { time: 0.62, skyColor: c(0xee7744), sunColor: c(0xff5533), sunIntensity: 0.75, ambientColor: c(0x884433), ambientIntensity: 0.38, fogNear: 22, fogFar: 170 },
-    { time: 0.70, skyColor: c(0x443355), sunColor: c(0x667799), sunIntensity: 0.38, ambientColor: c(0x2a2244), ambientIntensity: 0.30, fogNear: 22, fogFar: 155 },
-    { time: 0.80, skyColor: c(0x1e1e30), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x181830), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
+    { time: 0.05, skyColor: c(0x252540), sunColor: c(0x556688), sunIntensity: 0.30, ambientColor: c(0x1e1e35), ambientIntensity: 0.28, fogNear: 22, fogFar: 150 },
+    { time: 0.10, skyColor: c(0xd48a5a), sunColor: c(0xffaa55), sunIntensity: 0.65, ambientColor: c(0x886655), ambientIntensity: 0.35, fogNear: 25, fogFar: 180 },
+    { time: 0.20, skyColor: c(0x87ceeb), sunColor: c(0xfff5e0), sunIntensity: 1.10, ambientColor: c(0x8899bb), ambientIntensity: 0.55, fogNear: 38, fogFar: 260 },
+    { time: 0.42, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.25, ambientColor: c(0x99aacc), ambientIntensity: 0.60, fogNear: 42, fogFar: 290 },
+    { time: 0.60, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.20, ambientColor: c(0x8899bb), ambientIntensity: 0.58, fogNear: 40, fogFar: 280 },
+    { time: 0.67, skyColor: c(0xddaa66), sunColor: c(0xffcc77), sunIntensity: 1.00, ambientColor: c(0x887755), ambientIntensity: 0.48, fogNear: 32, fogFar: 220 },
+    { time: 0.77, skyColor: c(0xee7744), sunColor: c(0xff5533), sunIntensity: 0.75, ambientColor: c(0x884433), ambientIntensity: 0.38, fogNear: 22, fogFar: 170 },
+    { time: 0.88, skyColor: c(0x443355), sunColor: c(0x667799), sunIntensity: 0.38, ambientColor: c(0x2a2244), ambientIntensity: 0.30, fogNear: 22, fogFar: 155 },
+    { time: 0.94, skyColor: c(0x1e1e30), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x181830), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
     { time: 1.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x1a1a30), ambientIntensity: 0.25, fogNear: 20, fogFar: 140 },
 ];
 
@@ -284,10 +286,10 @@ function updateCycle(normalizedTime) {
     sunLight.color.copy(state.sunColor);
     sunLight.intensity = state.sunIntensity;
 
-    // Sun orbit: the sun peaks at t=0.35 (midday) and dips below
-    // the horizon at t=0.85 (midnight). Using cosine centered on
-    // t=0.35 so cos(0) = 1 = highest point.
-    const sunAngle = (normalizedTime - 0.35) * Math.PI * 2;
+    // Sun orbit: the sun peaks at t=0.42 (midday) and dips below
+    // the horizon at t=0.92 (midnight). Using cosine centered on
+    // t=0.42 so cos(0) = 1 = highest point.
+    const sunAngle = (normalizedTime - 0.42) * Math.PI * 2;
     const sunDist  = 80;
     const sunBaseY = 5;
     const sunAmp   = 65;   // how high above / below base the sun swings
