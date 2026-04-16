@@ -93,11 +93,14 @@ sunLight.target = sunTarget;
 scene.add(sunLight);
 
 // Pool of PointLights reused each frame. Instead of attaching a light
-// to every lit obstacle (expensive), we keep a small fixed pool and move
+// to every lit obstacle (expensive), we keep a fixed pool and move
 // them to whichever light sources are closest to the skier. The emissive
 // materials handle the visual glow on all the others for free.
-// 10 lights gives good coverage without hurting performance.
-const NIGHT_LIGHT_COUNT = 10;
+//
+// Pool sized to cover every lit obstacle within fog + PointLight range
+// (~170 units at night ≈ 3 chunks × ~6 lit obstacles). This way lights
+// are already active before emerging from the fog — no visible pop
+const NIGHT_LIGHT_COUNT = 20;
 const nightLights = [];
 for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
     const pl = new THREE.PointLight(0xffaa44, 0, 28, 1.2);
@@ -650,20 +653,33 @@ function animate(now) {
         // Sort by distance to skier, closest first
         litPositions.sort((a, b) => a.dist - b.dist);
 
-        // Assign pool lights to the nearest lit obstacles
+        // Assign pool lights to the nearest lit obstacles.
+        // Intensity fades in/out smoothly so lights don't "pop" when
+        // an obstacle enters or leaves the closest-10 list.
         for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
+            const pl = nightLights[i];
             if (i < litPositions.length) {
                 const lp = litPositions[i];
-                nightLights[i].position.set(lp.x, lp.y, lp.z);
-                nightLights[i].intensity = nightFactor * lp.intensity;
+                pl.position.set(lp.x, lp.y, lp.z);
+
+                // Exponential ease toward target (frame-rate independent)
+                // The PointLight's own distance/decay handles spatial
+                // falloff — we only smooth the on/off transition here
+                const target = nightFactor * lp.intensity;
+                pl._fade = (pl._fade ?? 0) + (target - (pl._fade ?? 0)) * (1 - Math.exp(-3 * delta));
+                pl.intensity = pl._fade;
             } else {
-                nightLights[i].intensity = 0;
+                // Fade out unused lights
+                pl._fade = (pl._fade ?? 0) * Math.exp(-3 * delta);
+                pl.intensity = pl._fade;
             }
         }
     } else {
-        // Daytime: all pool lights off
+        // Daytime: fade all pool lights off smoothly
         for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
-            nightLights[i].intensity = 0;
+            const pl = nightLights[i];
+            pl._fade = (pl._fade ?? 0) * Math.exp(-6 * delta);
+            pl.intensity = pl._fade;
         }
     }
 
