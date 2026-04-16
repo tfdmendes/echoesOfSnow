@@ -77,10 +77,8 @@ sunLight.castShadow = true;
 sunLight.shadow.mapSize.width  = 8192;
 sunLight.shadow.mapSize.height = 8192;
 
-// Symmetric frustum sized to match the maximum fog distance (~290).
-// ±150 covers 300 units in every direction from the sunTarget (skier),
-// so every visible obstacle casts a shadow. Beyond fog, shadows are invisible anyway.
-sunLight.shadow.camera.near   = 1;
+
+sunLight.shadow.camera.near   = -200;
 sunLight.shadow.camera.far    = 500;
 sunLight.shadow.camera.left   = -150;
 sunLight.shadow.camera.right  = 150;
