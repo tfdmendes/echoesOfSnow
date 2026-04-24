@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { skier, animateSkier } from './skier.js';
 import {
     createTerrain, updateTerrain,
-    CHUNK_LENGTH, CHUNK_WIDTH
+    CHUNK_LENGTH, CHUNK_WIDTH, PLAY_HALF_X
 } from './terrain.js';
 import { populateChunk, clearChunk, checkCollisions, lanternMat, lamppostBulbMat } from './obstacles.js';
+import { createScenery, updateScenery } from './scenery.js';
 
 
 // ============================================================
@@ -14,10 +15,20 @@ import { populateChunk, clearChunk, checkCollisions, lanternMat, lamppostBulbMat
 const SPEED_INITIAL  = 14;
 const SPEED_RAMP     = 0.4;
 const LATERAL_SPEED  = 6;
-const LATERAL_LIMIT  = 12;
+// The flags mark the edge of the ridge -- crossing PLAY_HALF_X triggers the fall
+// so we keep the reference in sync with terrain.js instead of duplicating it here.
+const LATERAL_LIMIT  = PLAY_HALF_X;
 const LEAN_ANGLE     = 0.18;
 const LEAN_SPEED     = 6;
 const SAFE_CHUNKS    = 2;
+
+// Falling physics -- used while gameState === 'falling'. These are tuned
+// so the fall reads as a dramatic slip off the ridge without the player
+// having to wait long before the game-over screen appears.
+const FALL_GRAVITY      = 22;   // downward acceleration, world units / s^2
+const FALL_LATERAL_PUSH = 9;    // how fast the skier keeps sliding outward during the fall
+const FALL_SPIN_SPEED   = 2.8;  // radians / s applied to the skier while tumbling
+const FALL_DURATION     = 1.6;  // seconds before transitioning to gameover
 
 // Full day/night cycle duration in seconds (~2 minutes)
 const CYCLE_DURATION = 130;
@@ -30,8 +41,21 @@ const CYCLE_DURATION = 130;
 let score     = 0;
 let elapsed   = 0;
 let gameSpeed = SPEED_INITIAL;
+// State machine: 'menu' -> 'playing' -> ('falling' ->)? 'gameover'.
+// 'falling' is entered when the skier crosses one of the boundary flags;
+// physics take over until the skier is well below the ridge, then we
+// transition to 'gameover' and show the usual overlay.
 let gameState = 'menu';
 let lastTime  = performance.now();
+
+// Tracked only while falling. fallTimer counts seconds elapsed since the
+// crossing, fallVelY is the current downward velocity (gravity integrates
+// it each frame), and fallDir records which side the skier fell off so
+// the lateral drift keeps going in a consistent direction even if the
+// player releases the arrow keys mid-fall.
+let fallTimer  = 0;
+let fallVelY   = 0;
+let fallDir    = 0;
 
 const keys = { left: false, right: false };
 
@@ -194,9 +218,14 @@ const glowTexture = makeGlowTexture();
 // MeshBasicMaterial ignores all light sources and renders with flat color.
 // This is correct for the sun and moon -- they are light sources themselves,
 // not surfaces that receive light.
+// fog:false keeps them visible at the large visual distance we render
+// them at (beyond the mountain ring) -- without it the scene fog would
+// fade them out entirely before they reach the camera.
+// Radius is ~6x the original so the angular size stays comparable once
+// the mesh is moved from ~80 to ~520 units away from the skier.
 const sunMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(2.5, 16, 16), // SphereGeometry(radius, widthSegments, heightSegments)
-    new THREE.MeshBasicMaterial({ color: 0xffffaa })
+    new THREE.SphereGeometry(15, 16, 16), // SphereGeometry(radius, widthSegments, heightSegments)
+    new THREE.MeshBasicMaterial({ color: 0xffffaa, fog: false })
 );
 scene.add(sunMesh);
 
@@ -211,15 +240,16 @@ const sunGlowMat = new THREE.SpriteMaterial({
     blending:    THREE.AdditiveBlending,
     transparent: true,
     depthWrite:  false,
+    fog:         false,
 });
 const sunGlow = new THREE.Sprite(sunGlowMat);
-sunGlow.scale.set(28, 28, 1); // Sprite.scale(x, y, z) -- z is ignored for sprites
+sunGlow.scale.set(170, 170, 1); // Sprite.scale(x, y, z) -- scaled up to match the far-away sun
 scene.add(sunGlow);
 
 // Moon is smaller and cooler in color temperature than the sun
 const moonMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(1.6, 16, 16), // SphereGeometry(radius, widthSegments, heightSegments)
-    new THREE.MeshBasicMaterial({ color: 0xdde8ff })
+    new THREE.SphereGeometry(10, 16, 16), // SphereGeometry(radius, widthSegments, heightSegments)
+    new THREE.MeshBasicMaterial({ color: 0xdde8ff, fog: false })
 );
 scene.add(moonMesh);
 
@@ -229,9 +259,10 @@ const moonGlowMat = new THREE.SpriteMaterial({
     blending:    THREE.AdditiveBlending,
     transparent: true,
     depthWrite:  false,
+    fog:         false,
 });
 const moonGlow = new THREE.Sprite(moonGlowMat);
-moonGlow.scale.set(14, 14, 1); // Sprite.scale(x, y, z) -- smaller halo than the sun
+moonGlow.scale.set(85, 85, 1); // Sprite.scale(x, y, z) -- smaller halo than the sun
 scene.add(moonGlow);
 
 
@@ -306,20 +337,33 @@ function updateCycle(normalizedTime) {
     sunLight.position.x += sunTarget.position.x;
     sunLight.position.z += sunTarget.position.z;
 
-    // Place the sun mesh and glow at the same world position as the light source.
-    // The light position already includes the skier offset applied above.
-    sunMesh.position.copy(sunLight.position);
-    sunGlow.position.copy(sunLight.position);
+    // The VISUAL sun/moon meshes sit much further out than the directional
+    // light. This is purely a rendering concern: if the mesh were at the
+    // light's actual orbital distance (~80 units), it would appear BETWEEN
+    // the skier and the mountain ring (inner radius 260) -- totally
+    // breaking the sense of scale. Pushing the mesh to ~520 units places
+    // the sun disc BEHIND the distant peaks, where it belongs.
+    // The light itself stays close so the directional shadow camera
+    // frustum stays tight over the play area (better shadow resolution).
+    const visualDist = 520;
+    const visualAmp  = 260;
+
+    const sunVX = Math.sin(sunAngle) * visualDist * 0.4 + sunTarget.position.x;
+    const sunVY = sunBaseY + Math.cos(sunAngle) * visualAmp;
+    const sunVZ = visualDist * 0.6                     + sunTarget.position.z;
+
+    sunMesh.position.set(sunVX, sunVY, sunVZ);
+    sunGlow.position.set(sunVX, sunVY, sunVZ);
 
     // The moon orbits on the opposite side of the arc (half cycle out of phase).
     // We reuse the same orbital math as the sun but offset by PI radians.
     const moonAngle = sunAngle + Math.PI;
-    const moonX =  Math.sin(moonAngle) * sunDist * 0.4       + sunTarget.position.x;
-    const moonY =  sunBaseY + Math.cos(moonAngle) * sunAmp;
-    const moonZ =  sunDist * 0.6                             + sunTarget.position.z;
+    const moonVX = Math.sin(moonAngle) * visualDist * 0.4 + sunTarget.position.x;
+    const moonVY = sunBaseY + Math.cos(moonAngle) * visualAmp;
+    const moonVZ = visualDist * 0.6                      + sunTarget.position.z;
 
-    moonMesh.position.set(moonX, moonY, moonZ);
-    moonGlow.position.set(moonX, moonY, moonZ);
+    moonMesh.position.set(moonVX, moonVY, moonVZ);
+    moonGlow.position.set(moonVX, moonVY, moonVZ);
 
     // Fade each body in and out based on how day-like the moment is.
     // sunLight.intensity is already interpolated by the keyframes, so it
@@ -348,6 +392,10 @@ const chunks = createTerrain(scene);
 for (let i = SAFE_CHUNKS; i < chunks.length; i++) {
     populateChunk(chunks[i], CHUNK_LENGTH, CHUNK_WIDTH, 0, false);
 }
+
+// Background mountain ring. Created once; the main loop only has to
+// slide it along Z every frame so it tracks the skier's progress.
+const sceneryRing = createScenery(scene);
 
 
 // ============================================================
@@ -534,13 +582,18 @@ function startGame() {
 
 function restartGame() {
     skier.position.set(0, 0, 0);
-    skier.rotation.z = 0;
+    skier.rotation.set(0, 0, 0);
 
     // Reset state BEFORE repopulating so chunks use score = 0
     elapsed   = 0;
     score     = 0;
     gameSpeed = SPEED_INITIAL;
     lastTime  = performance.now();
+
+    // Clear any leftover falling state from the previous run
+    fallTimer = 0;
+    fallVelY  = 0;
+    fallDir   = 0;
 
     for (let i = 0; i < chunks.length; i++) {
         clearChunk(chunks[i]);
@@ -576,11 +629,10 @@ function animate(now) {
 
         updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
 
-        // Lateral movement
+        // Lateral movement. No hard clamp -- the skier is allowed to cross
+        // the boundary flags so the fall can be triggered by the overshoot.
         if (keys.left)  skier.position.x += LATERAL_SPEED * delta;
         if (keys.right) skier.position.x -= LATERAL_SPEED * delta;
-        skier.position.x = Math.max(-LATERAL_LIMIT,
-                           Math.min( LATERAL_LIMIT, skier.position.x));
 
         // Lean into turns
         let targetLean = 0;
@@ -590,8 +642,17 @@ function animate(now) {
 
         animateSkier(elapsed);
 
+        // Boundary check: crossing either flag line triggers the fall.
+        // Done before collision so a skier that overshoots exactly at a
+        // boundary obstacle still falls instead of colliding.
+        if (Math.abs(skier.position.x) > LATERAL_LIMIT) {
+            gameState = 'falling';
+            fallTimer = 0;
+            fallVelY  = 0;
+            fallDir   = Math.sign(skier.position.x);   // +1 right, -1 left
+        }
         // Collision
-        if (checkCollisions(skier.position, chunks)) {
+        else if (checkCollisions(skier.position, chunks)) {
             gameState = 'gameover';
             document.getElementById('go-score').textContent =
                 'Score: ' + Math.floor(score) + ' m';
@@ -603,12 +664,42 @@ function animate(now) {
             'Score: ' + Math.floor(score) + ' m<br>' +
             'Speed: ' + gameSpeed.toFixed(1) + ' m/s';
     }
+    // -- Falling: the skier has crossed a boundary flag --
+    // Physics: constant lateral push outward + gravity on y + tumbling
+    // rotation. Terrain keeps moving so the camera still reads as
+    // in-motion. After FALL_DURATION we switch to 'gameover'.
+    else if (gameState === 'falling') {
+        fallTimer += delta;
+        fallVelY  -= FALL_GRAVITY * delta;   // gravity integrates velocity
+
+        skier.position.y += fallVelY * delta;
+        skier.position.x += fallDir  * FALL_LATERAL_PUSH * delta;
+
+        // Tumble: roll sideways (Z) and pitch forward (X) for a
+        // dramatic "lost control" look
+        skier.rotation.z += -fallDir * FALL_SPIN_SPEED * delta;
+        skier.rotation.x +=  FALL_SPIN_SPEED * 0.7     * delta;
+
+        // Keep terrain + cycle moving so the world around the fall feels alive
+        updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
+
+        if (fallTimer >= FALL_DURATION) {
+            gameState = 'gameover';
+            document.getElementById('go-score').textContent =
+                'Score: ' + Math.floor(score) + ' m';
+            overlay.style.opacity = '1';
+        }
+    }
 
     // -- Day/night cycle (always ticks, even on game over) --
     const cycleT = getCycleT();
 
     // Sun target follows the skier so the shadow frustum stays centered
     sunTarget.position.set(skier.position.x, 0, skier.position.z);
+
+    // Keep the mountain ring centred on the player's forward position
+    // so the horizon appears infinite regardless of how far the skier goes.
+    updateScenery(sceneryRing, skier.position.z);
 
     updateCycle(cycleT);
 
