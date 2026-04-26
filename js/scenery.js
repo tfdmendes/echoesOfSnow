@@ -14,9 +14,9 @@ import * as THREE from 'three';
 //      dominate fill rate. Instead, flatShading + a single directional
 //      light produce consistent per-face shading ("static shadows" --
 //      ICG_05 Illumination_and_Shading, Gouraud vs flat shading).
-//   2. Geometry is cloned+deformed per mountain but the material is
-//      shared across every mountain in the scene, so the whole ring pays
-//      for a single draw-state switch (ICG_02, scene graph cost model).
+//   2. All mountain geometry is merged into one static BufferGeometry.
+//      The skyline still has per-mountain random shapes/colours, but the
+//      renderer pays one draw call instead of one call per mountain.
 
 
 // Valley floor level. All mountain bases and the outer edge of each
@@ -105,7 +105,7 @@ const VALLEY_FLOOR_SIZE = 1800;  // Plane side length: larger than 2x camera far
 // light/dark breakup that substitutes for a shadow map.
 //
 // side: DoubleSide is IMPORTANT here. The vertex perturbation in
-// createMountain() shifts positions by up to ~12% of the cone radius,
+// createMountainGeometry() shifts positions by up to ~12% of the cone radius,
 // which occasionally flips the winding order of a triangle. With the
 // default FrontSide, flipped triangles are back-face-culled and become
 // invisible "holes" in the mesh -- the viewer then sees the back side
@@ -130,6 +130,40 @@ const valleyFloorMaterial = new THREE.MeshPhongMaterial({
 });
 
 
+function mergeMountainGeometries(geometries) {
+    let vertexCount = 0;
+
+    for (const geo of geometries) {
+        vertexCount += geo.attributes.position.count;
+    }
+
+    const positions = new Float32Array(vertexCount * 3);
+    const normals   = new Float32Array(vertexCount * 3);
+    const colors    = new Float32Array(vertexCount * 3);
+
+    let offset = 0;
+    for (const geo of geometries) {
+        const positionAttr = geo.attributes.position;
+        const normalAttr   = geo.attributes.normal;
+        const colorAttr    = geo.attributes.color;
+
+        positions.set(positionAttr.array, offset * 3);
+        normals.set(normalAttr.array, offset * 3);
+        colors.set(colorAttr.array, offset * 3);
+        offset += positionAttr.count;
+    }
+
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    merged.setAttribute('normal',   new THREE.BufferAttribute(normals, 3));
+    merged.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+    merged.computeBoundingBox();
+    merged.computeBoundingSphere();
+
+    return merged;
+}
+
+
 
 // Build the valley floor -- one large horizontal plane parked at
 // VALLEY_FLOOR_Y. The plane only has to be large enough that fog
@@ -152,13 +186,13 @@ function createValleyFloor() {
 
 
 
-// Build a single mountain mesh.
+// Build a single mountain geometry.
 // Base shape is a cone with a few radial and vertical segments. Vertex
 // positions are then perturbed (ICG_06, vertex manipulation pattern used
 // in Praticas/Three_js_06/06_04_Ex_Waves.html) to remove the uniform cone
 // look. Vertex colours are assigned according to the vertical coordinate
 // so the tops appear snowy and the bases rocky.
-function createMountain(height, radius) {
+function createMountainGeometry(height, radius) {
     // ConeGeometry(radius, height, radialSegments, heightSegments)
     // radialSegments kept low (7) so silhouettes look rugged; heightSegments
     // moderate so the vertex-colour gradient has enough bands.
@@ -215,10 +249,13 @@ function createMountain(height, radius) {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colorAttribute, 3));
 
-    // All mountains share the single mountainMaterial above (one draw-state
-    // for the whole ring). vertexColors are on the GEOMETRY, not the material,
-    // so sharing is safe.
-    const mesh = new THREE.Mesh(geo, mountainMaterial);
+    return geo.toNonIndexed();
+}
+
+
+
+function createMountainMesh(geometries) {
+    const mesh = new THREE.Mesh(mergeMountainGeometries(geometries), mountainMaterial);
 
     // Do NOT participate in the shadow pass. Casting shadows from 100-unit
     // cones into an already-stretched directional shadow frustum would
@@ -235,7 +272,7 @@ function createMountain(height, radius) {
 // Populate a ring of mountains according to the given config.
 // angleFn generates the angular coordinate -- used to restrict foothills
 // to the lateral quadrants so they do not sit under the ski track.
-function populateRing(parent, config, angleFn) {
+function populateRing(geometries, config, angleFn) {
     for (let i = 0; i < config.count; i++) {
         const angle = angleFn(i, config.count);
 
@@ -246,21 +283,26 @@ function populateRing(parent, config, angleFn) {
         const radius = config.minRadius
             + Math.random() * (config.maxRadius - config.minRadius);
 
-        const mountain = createMountain(height, radius);
+        const mountain = createMountainGeometry(height, radius);
 
         // Place the mountain so its BASE (bottom tip of the cone) sits at
         // config.baseY. ConeGeometry is centered on its midpoint, so the
         // base lies at (center.y - height/2); placing the center at
         // baseY + height/2 makes the base land exactly at baseY.
         // This is what lets every mountain "stand on" the valley floor.
-        mountain.position.set(
+        const matrix = new THREE.Matrix4();
+        const position = new THREE.Vector3(
             Math.sin(angle) * ringRadius,
             config.baseY + height / 2,
             Math.cos(angle) * ringRadius
         );
-        mountain.rotation.y = Math.random() * Math.PI * 2;
+        const rotation = new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(0, Math.random() * Math.PI * 2, 0)
+        );
+        matrix.compose(position, rotation, new THREE.Vector3(1, 1, 1));
+        mountain.applyMatrix4(matrix);
 
-        parent.add(mountain);
+        geometries.push(mountain);
     }
 }
 
@@ -294,11 +336,12 @@ function lateralAngleFn(angleRange) {
 // keep the horizon centred on the skier.
 export function createScenery(scene) {
     const ring = new THREE.Group();
+    const mountainGeometries = [];
 
     // Floor first so all mountain meshes render over it in depth order.
     ring.add(createValleyFloor());
 
-    populateRing(ring, {
+    populateRing(mountainGeometries, {
         count:        MAIN_COUNT,
         innerRadius:  MAIN_RING_INNER,
         outerRadius:  MAIN_RING_OUTER,
@@ -312,7 +355,7 @@ export function createScenery(scene) {
     // One ring per foothill tier, each with its own size range and
     // angular window (see FOOTHILL_TIERS above).
     for (const tier of FOOTHILL_TIERS) {
-        populateRing(ring, {
+        populateRing(mountainGeometries, {
             count:       tier.count,
             innerRadius: tier.innerR,
             outerRadius: tier.outerR,
@@ -323,6 +366,8 @@ export function createScenery(scene) {
             baseY:       VALLEY_FLOOR_Y,
         }, lateralAngleFn(tier.angleRange));
     }
+
+    ring.add(createMountainMesh(mountainGeometries));
 
     scene.add(ring);
     return ring;
