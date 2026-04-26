@@ -7,8 +7,38 @@ let leftSkiGroup, rightSkiGroup;
 let leftArmGroup, rightArmGroup;
 let leftForearmGroup, rightForearmGroup;
 let leftPoleGroup, rightPoleGroup;
+let leftSkiMesh, rightSkiMesh;
+let leftPoleMesh, rightPoleMesh;
 
 const POLE_LENGTH = 0.75;
+const EQUIPMENT_GRAVITY = 16;
+const EQUIPMENT_GROUND_Y = 0.035;
+const EQUIPMENT_BOUNCE = 0.28;
+const EQUIPMENT_DRAG = 3.8;
+
+const equipmentParts = [];
+
+function applyBasePose() {
+    upperBodyGroup.rotation.set(0.02, 0, 0);
+
+    leftLegGroup.rotation.set(-0.20, 0, 0);
+    rightLegGroup.rotation.set(-0.20, 0, 0);
+
+    leftKneeGroup.rotation.set(-0.20, 0, 0);
+    rightKneeGroup.rotation.set(-0.20, 0, 0);
+
+    leftSkiGroup.rotation.set(0, 0.015, 0);
+    rightSkiGroup.rotation.set(0, -0.015, 0);
+
+    leftArmGroup.rotation.set(-0.45, 0, -0.12);
+    rightArmGroup.rotation.set(-0.45, 0, 0.12);
+
+    leftForearmGroup.rotation.set(-0.35, 0, 0);
+    rightForearmGroup.rotation.set(-0.35, 0, 0);
+
+    leftPoleGroup.rotation.set(0.05, 0, 0);
+    rightPoleGroup.rotation.set(0.05, 0, 0);
+}
 
 function createArm(side, jacketMat, poleMat, gloveMat) {
     const sign = side === 'left' ? -1 : 1;
@@ -54,7 +84,7 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
     elbow.add(forearm, hand, polePivot);
     shoulder.add(upperArm, elbow);
 
-    return { shoulder, elbow, polePivot };
+    return { shoulder, elbow, polePivot, pole };
 }
 
 function createLeg(side, pantsMat, bootMat, skiMat) {
@@ -107,7 +137,22 @@ function createLeg(side, pantsMat, bootMat, skiMat) {
     knee.add(lowerLeg, ankle);
     hip.add(upperLeg, knee);
 
-    return { hip, knee, skiPivot };
+    return { hip, knee, skiPivot, ski };
+}
+
+function registerEquipment(mesh, homeParent, side, kind) {
+    equipmentParts.push({
+        mesh,
+        homeParent,
+        side,
+        kind,
+        homePosition: mesh.position.clone(),
+        homeQuaternion: mesh.quaternion.clone(),
+        homeScale: mesh.scale.clone(),
+        velocity: new THREE.Vector3(),
+        angularVelocity: new THREE.Vector3(),
+        released: false
+    });
 }
 
 function createSkier() {
@@ -148,50 +193,35 @@ function createSkier() {
     leftArmGroup     = leftArm.shoulder;
     leftForearmGroup = leftArm.elbow;
     leftPoleGroup    = leftArm.polePivot;
+    leftPoleMesh     = leftArm.pole;
 
     const rightArm = createArm('right', jacketMat, poleMat, gloveMat);
     rightArmGroup     = rightArm.shoulder;
     rightForearmGroup = rightArm.elbow;
     rightPoleGroup    = rightArm.polePivot;
+    rightPoleMesh     = rightArm.pole;
 
     const leftLeg = createLeg('left', pantsMat, bootMat, skiMat);
     leftLegGroup  = leftLeg.hip;
     leftKneeGroup = leftLeg.knee;
     leftSkiGroup  = leftLeg.skiPivot;
+    leftSkiMesh   = leftLeg.ski;
 
     const rightLeg = createLeg('right', pantsMat, bootMat, skiMat);
     rightLegGroup  = rightLeg.hip;
     rightKneeGroup = rightLeg.knee;
     rightSkiGroup  = rightLeg.skiPivot;
+    rightSkiMesh   = rightLeg.ski;
 
     upperBodyGroup.add(torso, head, hat, goggles, leftArmGroup, rightArmGroup);
     group.add(upperBodyGroup, leftLegGroup, rightLegGroup);
 
-    // base skiing stance - knees bent, upper body leaning forward
-    // Matches the midpoint of animateSkier's lean range so the
-    // character doesn't appear to "grow" when the game starts.
-    upperBodyGroup.rotation.x = 0.02;
+    applyBasePose();
 
-    leftLegGroup.rotation.x  = -0.20;
-    rightLegGroup.rotation.x = -0.20;
-
-    leftKneeGroup.rotation.x  = -0.20;
-    rightKneeGroup.rotation.x = -0.20;
-
-    leftSkiGroup.rotation.y  =  0.015;
-    rightSkiGroup.rotation.y = -0.015;
-
-    leftArmGroup.rotation.x  = -0.45;
-    rightArmGroup.rotation.x = -0.45;
-
-    leftArmGroup.rotation.z  = -0.12;
-    rightArmGroup.rotation.z =  0.12;
-
-    leftForearmGroup.rotation.x  = -0.35;
-    rightForearmGroup.rotation.x = -0.35;
-
-    leftPoleGroup.rotation.x  = 0.05;
-    rightPoleGroup.rotation.x = 0.05;
+    registerEquipment(leftSkiMesh,  leftSkiGroup,  -1, 'ski');
+    registerEquipment(rightSkiMesh, rightSkiGroup,  1, 'ski');
+    registerEquipment(leftPoleMesh, leftPoleGroup, -1, 'pole');
+    registerEquipment(rightPoleMesh, rightPoleGroup, 1, 'pole');
 
     return group;
 }
@@ -229,6 +259,10 @@ export function animateSkier(time) {
     // ski compensates hip rotation to stay flat on the snow
     leftSkiGroup.rotation.x   = -0.20 - raw * 0.05;
     rightSkiGroup.rotation.x  = -0.20 + raw * 0.05;
+    leftSkiGroup.rotation.y   =  0.015;
+    rightSkiGroup.rotation.y  = -0.015;
+    leftSkiGroup.rotation.z   = 0;
+    rightSkiGroup.rotation.z  = 0;
 
     const armX     = lerp(ARM_X[0],     ARM_X[1],     t);
     const armZ     = lerp(ARM_Z[0],     ARM_Z[1],     t);
@@ -245,4 +279,113 @@ export function animateSkier(time) {
 
     leftPoleGroup.rotation.x  = poleX;
     rightPoleGroup.rotation.x = poleX;
+}
+
+export function resetSkierPose() {
+    applyBasePose();
+}
+
+export function resetSkierEquipment() {
+    for (const part of equipmentParts) {
+        part.homeParent.add(part.mesh);
+        part.mesh.position.copy(part.homePosition);
+        part.mesh.quaternion.copy(part.homeQuaternion);
+        part.mesh.scale.copy(part.homeScale);
+        part.velocity.set(0, 0, 0);
+        part.angularVelocity.set(0, 0, 0);
+        part.released = false;
+    }
+}
+
+export function releaseSkierEquipment(sceneRoot, impact = {}) {
+    let normalX = impact.normalX ?? 0;
+    let normalZ = impact.normalZ ?? -1;
+    const normalLen = Math.hypot(normalX, normalZ);
+    if (normalLen > 0.0001) {
+        normalX /= normalLen;
+        normalZ /= normalLen;
+    } else {
+        normalX = 0;
+        normalZ = -1;
+    }
+
+    const speed = impact.speed ?? 12;
+
+    sceneRoot.updateMatrixWorld(true);
+    for (const part of equipmentParts) {
+        if (part.released) continue;
+
+        // Object3D.attach preserves the world transform, so the equipment
+        // starts exactly where it was on the skier before flying away.
+        sceneRoot.attach(part.mesh);
+        part.released = true;
+
+        const isSki = part.kind === 'ski';
+        const sideKick = part.side * (isSki ? 1.8 : 2.8);
+        const forwardKick = isSki ? 5.5 : 2.6;
+        const lift = isSki ? 2.6 : 3.6;
+
+        part.velocity.set(
+            normalX * 3.0 + sideKick + (Math.random() - 0.5) * 0.8,
+            lift + Math.random() * 1.2,
+            forwardKick + normalZ * 1.2 + speed * 0.18
+        );
+
+        part.angularVelocity.set(
+            (2.5 + Math.random() * 3.5) * (isSki ? 1.0 : 1.4),
+            part.side * (4.0 + Math.random() * 4.0),
+            (Math.random() - 0.5) * 7.0
+        );
+    }
+}
+
+export function updateReleasedEquipment(delta) {
+    for (const part of equipmentParts) {
+        if (!part.released) continue;
+
+        part.velocity.y -= EQUIPMENT_GRAVITY * delta;
+        part.mesh.position.addScaledVector(part.velocity, delta);
+
+        part.mesh.rotation.x += part.angularVelocity.x * delta;
+        part.mesh.rotation.y += part.angularVelocity.y * delta;
+        part.mesh.rotation.z += part.angularVelocity.z * delta;
+
+        if (part.mesh.position.y < EQUIPMENT_GROUND_Y) {
+            part.mesh.position.y = EQUIPMENT_GROUND_Y;
+
+            if (part.velocity.y < 0) {
+                part.velocity.y = -part.velocity.y * EQUIPMENT_BOUNCE;
+                if (Math.abs(part.velocity.y) < 0.25) part.velocity.y = 0;
+            }
+
+            const drag = Math.exp(-EQUIPMENT_DRAG * delta);
+            part.velocity.x *= drag;
+            part.velocity.z *= drag;
+            part.angularVelocity.multiplyScalar(drag);
+        }
+    }
+}
+
+export function poseSkierForCrash(progress, side) {
+    const t = 1 - Math.pow(1 - Math.max(0, Math.min(1, progress)), 3);
+    const s = side || 1;
+
+    upperBodyGroup.rotation.x = lerp(0.03, 0.18, t);
+    upperBodyGroup.rotation.z = lerp(0.00, -0.12 * s, t);
+
+    leftLegGroup.rotation.x   = lerp(-0.20, -0.36, t);
+    rightLegGroup.rotation.x  = lerp(-0.20, -0.32, t);
+    leftKneeGroup.rotation.x  = lerp(0.40, 0.58, t);
+    rightKneeGroup.rotation.x = lerp(0.40, 0.52, t);
+
+    leftSkiGroup.rotation.y  = 0.015;
+    rightSkiGroup.rotation.y = -0.015;
+
+    leftArmGroup.rotation.x  = lerp(-0.45, -0.12, t);
+    rightArmGroup.rotation.x = lerp(-0.45, -0.12, t);
+    leftArmGroup.rotation.z  = lerp(-0.12, -0.38, t);
+    rightArmGroup.rotation.z = lerp(0.12, 0.38, t);
+
+    leftForearmGroup.rotation.x  = lerp(-0.35, -0.12, t);
+    rightForearmGroup.rotation.x = lerp(-0.35, -0.12, t);
 }

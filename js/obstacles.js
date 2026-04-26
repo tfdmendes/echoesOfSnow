@@ -1,8 +1,8 @@
 import * as THREE from 'three';
+import { createCircleCollider, createOrientedBoxCollider } from './collision.js';
 
 const MIN_SPACING = 3.5;
 const EDGE_MARGIN = 2.0;
-const SKIER_RADIUS = 0.45;
 
 const BASE_MIN = 3;
 const BASE_MAX = 6;
@@ -117,7 +117,7 @@ function createTree() {
     const s = 1.0 + Math.random() * 0.6;
     const sY = 1.4 + Math.random() * 0.8;
     group.scale.set(s, sY, s); // Object3D.scale(sx, sy, sz) -- non-uniform: sY stretches height
-    group.userData.collisionRadius = 0.3 * s;
+    group.userData.collider = createCircleCollider(0.3 * s);
 
     return group;
 }
@@ -141,7 +141,7 @@ function createRock() {
 
     const s = 1.2 + Math.random() * 0.4;
     group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
-    group.userData.collisionRadius = (isLarge ? 0.65 : 0.35) * s;
+    group.userData.collider = createCircleCollider((isLarge ? 0.65 : 0.35) * s);
 
     return group;
 }
@@ -197,7 +197,7 @@ function createSnowman() {
     // Uniform scale for variety 
     const s = 1.1 + Math.random() * 0.4;
     group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
-    group.userData.collisionRadius = 0.4 * s;
+    group.userData.collider = createCircleCollider(0.4 * s);
 
     return group;
 }
@@ -229,7 +229,7 @@ function createFallenLog() {
 
     const halfLength = (isLarge ? 1.4 : 1.0) * s;   // half cylinder height
     const radius = (isLarge ? 0.30 : 0.25) * s;  // cylinder radius
-    group.userData.collisionBox = { halfLen: radius, halfW: halfLength, cos: Math.cos(angle), sin: Math.sin(angle) };
+    group.userData.collider = createOrientedBoxCollider(halfLength, radius, angle);
 
     return group;
 }
@@ -253,7 +253,7 @@ function createStump() {
     // Uniform scale for variety 
     const s = 1.1 + Math.random() * 0.5;
     group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
-    group.userData.collisionRadius = 0.3 * s;
+    group.userData.collider = createCircleCollider(0.3 * s);
 
     return group;
 }
@@ -292,7 +292,7 @@ function createFence() {
     // Fence planks: 1.8 long (Z), 0.10 thick (X) — half-extents
     const halfLen = 0.95 * s;
     const halfW   = 0.20 * s;
-    group.userData.collisionBox = { halfLen, halfW, cos: Math.cos(angle), sin: Math.sin(angle) };
+    group.userData.collider = createOrientedBoxCollider(halfW, halfLen, angle);
 
     return group;
 }
@@ -344,7 +344,7 @@ function createLitFence() {
 
     const halfLen = 0.95 * s;
     const halfW   = 0.20 * s;
-    group.userData.collisionBox = { halfLen, halfW, cos: Math.cos(angle), sin: Math.sin(angle) };
+    group.userData.collider = createOrientedBoxCollider(halfW, halfLen, angle);
     group.userData.isLitFence = true;
 
     return group;
@@ -403,7 +403,7 @@ function createLamppost(spawnX) {
 
     group.rotation.y = 0;
 
-    group.userData.collisionRadius = 0.3;
+    group.userData.collider = createCircleCollider(0.3);
     group.userData.isLamppost = true;
     // Store the bulb's local X offset so scene.js can position
     // the pool light at the correct side of the arm
@@ -488,8 +488,7 @@ export function populateChunk(chunkGroup, chunkLength, chunkWidth, score, isNigh
             mesh,
             localX: lx,
             localZ: lz,
-            radius: mesh.userData.collisionRadius,
-            box:    mesh.userData.collisionBox || null
+            collider: mesh.userData.collider
         });
     }
 
@@ -504,46 +503,6 @@ export function clearChunk(chunkGroup) {
         chunkGroup.remove(ob.mesh);
     }
     chunkGroup.userData.obstacles = [];
-}
-
-
-
-export function checkCollisions(skierPos, chunks) {
-    for (const chunk of chunks) {
-        const obs = chunk.userData.obstacles || [];
-        for (const ob of obs) {
-            const wx = chunk.position.x + ob.localX;
-            const wz = chunk.position.z + ob.localZ;
-            const dx = skierPos.x - wx;
-            const dz = skierPos.z - wz;
-
-            if (ob.box) {
-                // Oriented-box vs circle collision.
-                // Rotate the skier position into the box's local frame,
-                // then do a standard AABB-vs-circle test.
-                const b = ob.box;
-                const localX = dx * b.cos + dz * b.sin;
-                const localZ = -dx * b.sin + dz * b.cos;
-
-                // Closest point on the box to the skier (clamped)
-                const cx = Math.max(-b.halfW, Math.min(b.halfW, localX));
-                const cz = Math.max(-b.halfLen, Math.min(b.halfLen, localZ));
-
-                const ex = localX - cx;
-                const ez = localZ - cz;
-                if (ex * ex + ez * ez < SKIER_RADIUS * SKIER_RADIUS) {
-                    return true;
-                }
-            } else {
-                // Simple circle-vs-circle
-                const dist = Math.sqrt(dx * dx + dz * dz);
-                if (dist < SKIER_RADIUS + ob.radius) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
 }
 
 

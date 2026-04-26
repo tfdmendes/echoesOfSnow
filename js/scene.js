@@ -1,10 +1,16 @@
 import * as THREE from 'three';
-import { skier, animateSkier } from './skier.js';
+import {
+    skier, animateSkier,
+    poseSkierForCrash, releaseSkierEquipment,
+    resetSkierEquipment, resetSkierPose,
+    updateReleasedEquipment
+} from './skier.js';
 import {
     createTerrain, updateTerrain,
     CHUNK_LENGTH, CHUNK_WIDTH, PLAY_HALF_X
 } from './terrain.js';
-import { populateChunk, clearChunk, checkCollisions, lanternMat, lamppostBulbMat } from './obstacles.js';
+import { populateChunk, clearChunk, lanternMat, lamppostBulbMat } from './obstacles.js';
+import { checkSkierCollision } from './collision.js';
 import { createScenery, updateScenery } from './scenery.js';
 
 
@@ -30,6 +36,26 @@ const FALL_LATERAL_PUSH = 9;    // how fast the skier keeps sliding outward duri
 const FALL_SPIN_SPEED   = 2.8;  // radians / s applied to the skier while tumbling
 const FALL_DURATION     = 1.6;  // seconds before transitioning to gameover
 
+// Obstacle crash response. These are still lightweight kinematics, not a
+// full physics simulation: the collision system gives us an impact normal,
+// then we integrate a short slide/tumble and detach the equipment for visual
+// feedback. This keeps the CPU cost close to the original game loop.
+const CRASH_GRAVITY      = 17;
+const CRASH_LAUNCH_UP    = 1.1;
+const CRASH_SIDE_PUSH    = 4.2;
+const CRASH_FORWARD_BASE = 1.5;
+const CRASH_FORWARD_SCALE = 0.42;
+const CRASH_FORWARD_MAX  = 14.5;
+const CRASH_NORMAL_Z_PUSH = 1.2;
+const CRASH_FORWARD_PITCH = 0.10;
+const CRASH_SIDE_ROLL    = 1.48;
+const CRASH_TWIST        = 0.12;
+const CRASH_DRAG         = 3.0;
+const CRASH_SPEED_DECAY  = 2.4;
+const CRASH_DURATION     = 1.45;
+const CRASH_GROUND_Y     = 0.05;
+const CRASH_MIN_BODY_Y   = 0.03;
+
 // Full day/night cycle duration in seconds (~2 minutes)
 const CYCLE_DURATION = 130;
 
@@ -42,25 +68,34 @@ let score     = 0;
 let elapsed   = 0;
 let gameSpeed = SPEED_INITIAL;
 // State machine: 'menu' -> 'playing' -> ('falling' ->)? 'gameover'.
-// 'falling' is entered when the skier crosses one of the boundary flags;
-// physics take over until the skier is well below the ridge, then we
-// transition to 'gameover' and show the usual overlay.
+// 'falling' covers both boundary slips and obstacle crashes; a fall mode
+// selects whether we use the steep edge drop or the shorter crash slide
+// before transitioning to 'gameover' and showing the usual overlay.
 let gameState = 'menu';
 let lastTime  = performance.now();
 
 // Tracked only while falling. fallTimer counts seconds elapsed since the
-// crossing, fallVelY is the current downward velocity (gravity integrates
-// it each frame), and fallDir records which side the skier fell off so
-// the lateral drift keeps going in a consistent direction even if the
-// player releases the arrow keys mid-fall.
+// fall started, fallVel* store the current kinematic velocities, and fallDir
+// records which side the skier fell toward so the tumble remains consistent
+// even if the player releases the arrow keys mid-fall.
 let fallTimer  = 0;
 let fallVelY   = 0;
 let fallDir    = 0;
+let fallMode   = 'edge';
+let fallVelX   = 0;
+let fallVelZ   = 0;
+let fallSpinX  = 0;
+let fallSpinY  = 0;
+let fallSpinZ  = 0;
+let fallStartRotX = 0;
+let fallStartRotY = 0;
+let fallStartRotZ = 0;
 
 const keys = { left: false, right: false };
 
 let camMode = 0;                    // 0 = behind, 1 = first-person, 2 = facing
 const camLook = new THREE.Vector3(0, 0.8, 4);  // smoothed lookAt target
+const skierBounds = new THREE.Box3();
 
 
 // ============================================================
@@ -567,6 +602,77 @@ function onChunkRecycle(chunk) {
     populateChunk(chunk, CHUNK_LENGTH, CHUNK_WIDTH, score, isNightTime());
 }
 
+function showGameOver() {
+    gameState = 'gameover';
+    document.getElementById('go-score').textContent =
+        'Score: ' + Math.floor(score) + ' m';
+    overlay.style.opacity = '1';
+}
+
+function beginEdgeFall() {
+    gameState = 'falling';
+    fallMode  = 'edge';
+    fallTimer = 0;
+    fallVelY  = 0;
+    fallVelX  = 0;
+    fallVelZ  = 0;
+    fallDir   = Math.sign(skier.position.x) || 1;   // +1 right, -1 left
+    fallSpinX = FALL_SPIN_SPEED * 0.7;
+    fallSpinY = 0;
+    fallSpinZ = -fallDir * FALL_SPIN_SPEED;
+    fallStartRotX = skier.rotation.x;
+    fallStartRotY = skier.rotation.y;
+    fallStartRotZ = skier.rotation.z;
+}
+
+function beginCollisionFall(collision) {
+    const impactSide = Math.abs(collision.normalX) > 0.08
+        ? Math.sign(collision.normalX)
+        : (skier.rotation.z >= 0 ? 1 : -1);
+
+    gameState = 'falling';
+    fallMode  = 'collision';
+    fallTimer = 0;
+    fallDir   = impactSide;
+
+    // Push away from the obstacle normal, but preserve downhill momentum.
+    // In this scene +Z is the skier's forward/downhill direction because
+    // terrain chunks scroll backward along -Z during normal play.
+    const forwardProjection = Math.min(
+        CRASH_FORWARD_MAX,
+        CRASH_FORWARD_BASE + gameSpeed * CRASH_FORWARD_SCALE
+    );
+    fallVelX = collision.normalX * CRASH_SIDE_PUSH + impactSide * 1.2;
+    fallVelY = CRASH_LAUNCH_UP;
+    fallVelZ = forwardProjection + collision.normalZ * CRASH_NORMAL_Z_PUSH;
+
+    // Obstacle crashes are posed as a controlled loss of balance, not a
+    // free-spinning ragdoll. The equipment flies off; the body stays a
+    // connected skier-shaped rig.
+    fallSpinX = 0;
+    fallSpinY = 0;
+    fallSpinZ = 0;
+    fallStartRotX = skier.rotation.x;
+    fallStartRotY = skier.rotation.y;
+    fallStartRotZ = skier.rotation.z;
+
+    releaseSkierEquipment(scene, {
+        normalX: collision.normalX,
+        normalZ: collision.normalZ,
+        speed: gameSpeed
+    });
+}
+
+function keepCrashBodyAboveSnow() {
+    skier.updateMatrixWorld(true);
+    skierBounds.setFromObject(skier);
+
+    if (skierBounds.min.y < CRASH_MIN_BODY_Y) {
+        skier.position.y += CRASH_MIN_BODY_Y - skierBounds.min.y;
+        if (fallVelY < 0) fallVelY = 0;
+    }
+}
+
 
 // Transitions from the menu screen to active gameplay.
 // Resets lastTime so the first frame delta is near zero (avoids
@@ -583,6 +689,8 @@ function startGame() {
 function restartGame() {
     skier.position.set(0, 0, 0);
     skier.rotation.set(0, 0, 0);
+    resetSkierPose();
+    resetSkierEquipment();
 
     // Reset state BEFORE repopulating so chunks use score = 0
     elapsed   = 0;
@@ -594,6 +702,15 @@ function restartGame() {
     fallTimer = 0;
     fallVelY  = 0;
     fallDir   = 0;
+    fallMode  = 'edge';
+    fallVelX  = 0;
+    fallVelZ  = 0;
+    fallSpinX = 0;
+    fallSpinY = 0;
+    fallSpinZ = 0;
+    fallStartRotX = 0;
+    fallStartRotY = 0;
+    fallStartRotZ = 0;
 
     for (let i = 0; i < chunks.length; i++) {
         clearChunk(chunks[i]);
@@ -646,17 +763,12 @@ function animate(now) {
         // Done before collision so a skier that overshoots exactly at a
         // boundary obstacle still falls instead of colliding.
         if (Math.abs(skier.position.x) > LATERAL_LIMIT) {
-            gameState = 'falling';
-            fallTimer = 0;
-            fallVelY  = 0;
-            fallDir   = Math.sign(skier.position.x);   // +1 right, -1 left
+            beginEdgeFall();
         }
         // Collision
-        else if (checkCollisions(skier.position, chunks)) {
-            gameState = 'gameover';
-            document.getElementById('go-score').textContent =
-                'Score: ' + Math.floor(score) + ' m';
-            overlay.style.opacity = '1';
+        else {
+            const collision = checkSkierCollision(skier.position, chunks);
+            if (collision) beginCollisionFall(collision);
         }
 
         // HUD
@@ -664,32 +776,62 @@ function animate(now) {
             'Score: ' + Math.floor(score) + ' m<br>' +
             'Speed: ' + gameSpeed.toFixed(1) + ' m/s';
     }
-    // -- Falling: the skier has crossed a boundary flag --
-    // Physics: constant lateral push outward + gravity on y + tumbling
-    // rotation. Terrain keeps moving so the camera still reads as
-    // in-motion. After FALL_DURATION we switch to 'gameover'.
+    // -- Falling: boundary slip or obstacle crash --
+    // Edge falls keep the old steep-drop behavior. Obstacle collisions use
+    // the contact normal returned by collision.js for a short tumble/slide
+    // before the game-over overlay appears.
     else if (gameState === 'falling') {
         fallTimer += delta;
-        fallVelY  -= FALL_GRAVITY * delta;   // gravity integrates velocity
 
-        skier.position.y += fallVelY * delta;
-        skier.position.x += fallDir  * FALL_LATERAL_PUSH * delta;
+        if (fallMode === 'edge') {
+            fallVelY -= FALL_GRAVITY * delta;   // gravity integrates velocity
 
-        // Tumble: roll sideways (Z) and pitch forward (X) for a
-        // dramatic "lost control" look
-        skier.rotation.z += -fallDir * FALL_SPIN_SPEED * delta;
-        skier.rotation.x +=  FALL_SPIN_SPEED * 0.7     * delta;
+            skier.position.y += fallVelY * delta;
+            skier.position.x += fallDir  * FALL_LATERAL_PUSH * delta;
 
-        // Keep terrain + cycle moving so the world around the fall feels alive
-        updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
+            skier.rotation.z += fallSpinZ * delta;
+            skier.rotation.x += fallSpinX * delta;
 
-        if (fallTimer >= FALL_DURATION) {
-            gameState = 'gameover';
-            document.getElementById('go-score').textContent =
-                'Score: ' + Math.floor(score) + ' m';
-            overlay.style.opacity = '1';
+            // Keep terrain + cycle moving so the world around the fall feels alive
+            updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
+
+            if (fallTimer >= FALL_DURATION) showGameOver();
+        } else {
+            fallVelY -= CRASH_GRAVITY * delta;
+
+            skier.position.x += fallVelX * delta;
+            skier.position.y += fallVelY * delta;
+            skier.position.z += fallVelZ * delta;
+
+            if (skier.position.y < CRASH_GROUND_Y) {
+                skier.position.y = CRASH_GROUND_Y;
+                if (fallVelY < 0) fallVelY = 0;
+            }
+
+            const crashT = Math.min(1, fallTimer / CRASH_DURATION);
+            const easedCrashT = 1 - Math.pow(1 - crashT, 3);
+
+            skier.rotation.x = fallStartRotX + CRASH_FORWARD_PITCH * easedCrashT;
+            skier.rotation.y = fallStartRotY - fallDir * CRASH_TWIST * easedCrashT;
+            skier.rotation.z = fallStartRotZ - fallDir * CRASH_SIDE_ROLL * easedCrashT;
+            poseSkierForCrash(crashT, fallDir);
+            keepCrashBodyAboveSnow();
+
+            const drag = Math.exp(-CRASH_DRAG * delta);
+            fallVelX *= drag;
+            fallVelZ *= drag;
+
+            // The crash bleeds off speed instead of keeping the full downhill
+            // illusion after impact, but chunks still move a little so the
+            // scenery does not freeze abruptly.
+            gameSpeed *= Math.exp(-CRASH_SPEED_DECAY * delta);
+            updateTerrain(chunks, gameSpeed * 0.45, delta, onChunkRecycle);
+
+            if (fallTimer >= CRASH_DURATION) showGameOver();
         }
     }
+
+    updateReleasedEquipment(delta);
 
     // -- Day/night cycle (always ticks, even on game over) --
     const cycleT = getCycleT();
