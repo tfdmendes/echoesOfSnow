@@ -12,6 +12,7 @@ import {
 import { populateChunk, clearChunk, lanternMat, lamppostBulbMat } from './obstacles.js';
 import { checkSkierCollision } from './collision.js';
 import { createScenery, updateScenery } from './scenery.js';
+import { createAvalanche, updateAvalanche } from './avalanche.js';
 
 
 // ============================================================
@@ -432,6 +433,10 @@ for (let i = SAFE_CHUNKS; i < chunks.length; i++) {
 // slide it along Z every frame so it tracks the skier's progress.
 const sceneryRing = createScenery(scene);
 
+// Soft powder cloud behind the skier. Its layered transparency reads as a
+// cloud while still masking chunk recycling when the camera faces uphill.
+const avalanche = createAvalanche(scene);
+
 
 // ============================================================
 //  HUD & GAME OVER OVERLAY
@@ -842,6 +847,7 @@ function animate(now) {
     // Keep the mountain ring centred on the player's forward position
     // so the horizon appears infinite regardless of how far the skier goes.
     updateScenery(sceneryRing, skier.position.z);
+    updateAvalanche(avalanche, skier.position, delta, now * 0.001);
 
     updateCycle(cycleT);
 
