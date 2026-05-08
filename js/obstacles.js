@@ -67,12 +67,12 @@ const lanternMat = new THREE.MeshPhongMaterial({
 });
 
 // Lamppost shared geometries and materials
-const LAMPPOST_POLE_GEO    = new THREE.CylinderGeometry(0.05, 0.09, 4.5, 8); // CylinderGeometry(radiusTop, radiusBottom, height, segments) -- tapers toward the top
-const LAMPPOST_ARM_GEO     = new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6); // CylinderGeometry(radiusTop, radiusBottom, height, segments)
-const LAMPPOST_HOOD_GEO    = new THREE.ConeGeometry(0.28, 0.18, 8); // ConeGeometry(radius, height, segments) -- downward-facing shade
-const LAMPPOST_BULB_GEO    = new THREE.SphereGeometry(0.14, 10, 8); // SphereGeometry(radius, widthSegments, heightSegments)
-const LAMPPOST_BASE_GEO    = new THREE.CylinderGeometry(0.20, 0.26, 0.15, 10); // CylinderGeometry(radiusTop, radiusBottom, height, segments)
-const LAMPPOST_COLLAR_GEO  = new THREE.CylinderGeometry(0.08, 0.06, 0.10, 8); // CylinderGeometry(radiusTop, radiusBottom, height, segments) -- joint between pole and arm
+const LAMPPOST_POLE_GEO    = new THREE.CylinderGeometry(0.05, 0.09, 4.5, 8);   // tapers toward the top
+const LAMPPOST_ARM_GEO     = new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6);
+const LAMPPOST_HOOD_GEO    = new THREE.ConeGeometry(0.28, 0.18, 8);            // downward shade
+const LAMPPOST_BULB_GEO    = new THREE.SphereGeometry(0.14, 10, 8);
+const LAMPPOST_BASE_GEO    = new THREE.CylinderGeometry(0.20, 0.26, 0.15, 10);
+const LAMPPOST_COLLAR_GEO  = new THREE.CylinderGeometry(0.08, 0.06, 0.10, 8);  // joint between pole and arm
 
 const lamppostPoleMat = new THREE.MeshPhongMaterial({ color: 0x3a3a3a, shininess: 60 });
 const lamppostHoodMat = new THREE.MeshPhongMaterial({ color: 0x2a2a2a, shininess: 40 });
@@ -111,12 +111,10 @@ function createTree() {
 
     group.add(trunk, c1, c2, c3);
 
-    // Non-uniform scaling: the horizontal factor (s) controls width
-    // while the vertical factor (sY) is independent and larger, producing
-    // taller trees with random height variation across the forest.
+    // Non-uniform scale: sY stretches height independently of width
     const s = 1.0 + Math.random() * 0.6;
     const sY = 1.4 + Math.random() * 0.8;
-    group.scale.set(s, sY, s); // Object3D.scale(sx, sy, sz) -- non-uniform: sY stretches height
+    group.scale.set(s, sY, s);
     group.userData.collider = createCircleCollider(0.3 * s);
 
     return group;
@@ -140,7 +138,7 @@ function createRock() {
     group.add(rock);
 
     const s = 1.2 + Math.random() * 0.4;
-    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
+    group.scale.set(s, s, s);
     group.userData.collider = createCircleCollider((isLarge ? 0.65 : 0.35) * s);
 
     return group;
@@ -194,9 +192,9 @@ function createSnowman() {
     // Slight random rotation so they don't all face the same way
     group.rotation.y = Math.random() * Math.PI * 2;
 
-    // Uniform scale for variety 
+    // Uniform scale for variety
     const s = 1.1 + Math.random() * 0.4;
-    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
+    group.scale.set(s, s, s);
     group.userData.collider = createCircleCollider(0.4 * s);
 
     return group;
@@ -204,9 +202,7 @@ function createSnowman() {
 
 
 
-// Fallen log: horizontal cylinder lying on the ground.
-// Uses oriented-box collision instead of a circle because a circle
-// around a long thin object creates huge dead zones at the sides.
+// Horizontal log on the ground; oriented-box collision avoids dead zones
 function createFallenLog() {
     const group = new THREE.Group();
 
@@ -250,9 +246,9 @@ function createStump() {
 
     group.add(stump, top);
 
-    // Uniform scale for variety 
+    // Uniform scale for variety
     const s = 1.1 + Math.random() * 0.5;
-    group.scale.set(s, s, s); // Object3D.scale(sx, sy, sz) -- uniform scaling
+    group.scale.set(s, s, s);
     group.userData.collider = createCircleCollider(0.3 * s);
 
     return group;
@@ -260,8 +256,7 @@ function createStump() {
 
 
 
-// Wooden fence: two posts with two horizontal planks between them.
-// Uses oriented-box collision (planks span 1.8 along Z, ~0.10 thick).
+// Two posts with two horizontal planks between them
 function createFence() {
     const group = new THREE.Group();
 
@@ -289,7 +284,7 @@ function createFence() {
     const s = 1.2 + Math.random() * 0.2;
     group.scale.set(s, s, s);
 
-    // Fence planks: 1.8 long (Z), 0.10 thick (X) — half-extents
+    // Fence planks: half-extents (1.8 long along Z, 0.10 thick along X)
     const halfLen = 0.95 * s;
     const halfW   = 0.20 * s;
     group.userData.collider = createOrientedBoxCollider(halfW, halfLen, angle);
@@ -299,11 +294,7 @@ function createFence() {
 
 
 
-// Lit fence: same structure as a regular fence but with a small
-// glowing lantern on top of each post. The lantern uses an emissive
-// material so it visually glows with no lighting cost. The actual
-// night illumination comes from a few global PointLights in scene.js
-// that follow the skier.
+// Same as a regular fence, with an emissive lantern on top of each post
 function createLitFence() {
     const group = new THREE.Group();
 
@@ -326,7 +317,7 @@ function createLitFence() {
     plankBot.position.set(0, 0.35, 0);
     plankBot.castShadow = true;
 
-    // Emissive lantern on left post (glows for free, no PointLight needed)
+    // Emissive lantern on left post
     const lanternL = new THREE.Mesh(LANTERN_GEO, lanternMat);
     lanternL.position.set(0, 0.97, -0.85);
 
@@ -352,19 +343,12 @@ function createLitFence() {
 
 
 
-// Lampposts use the same PointLight pooling system as lit fences (scene.js)
-// instead of carrying individual lights. The emissive bulb material provides
-// the visual glow for free, and the pooled lights handle actual illumination.
-// This avoids creating 15-20 PointLights at night which would tank framerate.
-// spawnX is the local X position within the chunk so the arm
-// can point toward the center of the slope (inward).
+// Lampposts share the PointLight pool managed in scene.js; the bulb is
+// emissive only, so no PointLight is attached here
 function createLamppost(spawnX) {
     const group = new THREE.Group();
 
-    // Posts on the left half of the slope (spawnX > 0) extend their
-    // arm to the right (-X, toward center). Posts on the right half
-    // extend to the left (+X, toward center). This way the lamp
-    // always illuminates the ski path rather than the edge.
+    // Arm always points toward the centre of the slope (inward)
     const side = (spawnX > 0) ? -1 : 1;
 
     // Sturdy base
@@ -381,8 +365,7 @@ function createLamppost(spawnX) {
     const collar = new THREE.Mesh(LAMPPOST_COLLAR_GEO, lamppostPoleMat);
     collar.position.set(0, 4.55, 0);
 
-    // Horizontal arm extending to one side.
-    // Rotated 90 degrees on Z so the cylinder lies flat along X.
+    // Horizontal arm: rotated 90 deg on Z so the cylinder lies flat along X
     const arm = new THREE.Mesh(LAMPPOST_ARM_GEO, lamppostPoleMat);
     arm.position.set(0.5 * side, 4.55, 0);
     arm.rotation.z = Math.PI / 2;
@@ -394,8 +377,7 @@ function createLamppost(spawnX) {
     hood.rotation.x = Math.PI;
     hood.castShadow = true;
 
-    // Glowing bulb hanging just below the hood.
-    // The emissive material makes it glow visually at zero lighting cost.
+    // Emissive glowing bulb hanging just below the hood
     const bulb = new THREE.Mesh(LAMPPOST_BULB_GEO, lamppostBulbMat);
     bulb.position.set(0.95 * side, 4.28, 0);
 
@@ -405,8 +387,7 @@ function createLamppost(spawnX) {
 
     group.userData.collider = createCircleCollider(0.3);
     group.userData.isLamppost = true;
-    // Store the bulb's local X offset so scene.js can position
-    // the pool light at the correct side of the arm
+    // Local X offset of the bulb so the pool light lands on the right side
     group.userData.lampOffsetX = 0.95 * side;
 
     return group;
@@ -414,21 +395,7 @@ function createLamppost(spawnX) {
 
 
 
-// Weighted random selection across all obstacle types.
-// Trees are still the most common since they define the visual theme.
-//
-// Lit fences and lampposts can spawn at any time of day. During daytime
-// their emissive glow is turned off by scene.js; at night it fades in.
-//
-// During day:
-//   tree 28%  |  rock 13%  |  snowman 13%
-//   log  13%  |  stump 8%  |  fence 10%  |  litFence 8%  |  lamppost 7%
-//
-// During night: light-bearing obstacles are much more common.
-//   tree 18%  |  rock 8%   |  snowman 8%
-//   log  8%   |  stump 8%  |  litFence 25%  |  lamppost 25%
-// spawnX is passed through so lampposts know which half of the
-// slope they are on and can point their arm toward the center.
+// Weighted random pick. Light-bearing obstacles are biased much higher at night
 function pickObstacle(isNight, spawnX) {
     const r = Math.random();
     if (isNight) {
@@ -453,9 +420,7 @@ function pickObstacle(isNight, spawnX) {
 
 
 export function populateChunk(chunkGroup, chunkLength, chunkWidth, score, isNight) {
-    // Every 400m of score, add 1 to the minimum obstacle count.
-    // Every 300m of score, add 1 to the maximum obstacle count.
-    // Both capped at their HARD ceiling so the game stays playable.
+    // Difficulty ramp by score, capped at HARD_MIN/HARD_MAX
     const s = score || 0;
     const minCount = Math.min(HARD_MIN, BASE_MIN + Math.floor(s / 400));
     const maxCount = Math.min(HARD_MAX, BASE_MAX + Math.floor(s / 300));
@@ -506,6 +471,5 @@ export function clearChunk(chunkGroup) {
 }
 
 
-// Exported so scene.js can fade the emissive glow on/off with the
-// day/night cycle instead of the materials being permanently lit.
+// Exported so the day/night cycle in scene.js can fade the emissive glow
 export { lanternMat, lamppostBulbMat };

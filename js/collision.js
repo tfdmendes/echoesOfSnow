@@ -1,11 +1,5 @@
-// Lightweight ground-plane collision helper.
-//
-// A full rigid-body engine would be overkill here: gameplay only needs to
-// know whether the skier footprint hits an obstacle on the XZ plane. This
-// module keeps that cheap by using:
-//   1. a broad-phase bounding circle to reject far obstacles quickly;
-//   2. a narrow-phase test for either circle or oriented-box obstacles;
-//   3. a returned contact normal so scene.js can drive crash direction.
+// Ground-plane collision: broad-phase bounding circle + narrow-phase
+// circle/oriented-box test, returns a contact normal on hit
 
 export const SKIER_RADIUS = 0.45;
 
@@ -23,8 +17,7 @@ export function createCircleCollider(radius) {
     };
 }
 
-// halfX and halfZ are the local-space half-extents of the box after it
-// has been rotated by angle around the Y axis.
+// halfX/halfZ are local-space half-extents; angle is rotation around Y
 export function createOrientedBoxCollider(halfX, halfZ, angle) {
     return {
         type: 'box',
@@ -59,7 +52,7 @@ function boxNormalToWorld(localNormalX, localNormalZ, collider) {
 }
 
 function circleVsBox(dx, dz, collider) {
-    // Move the skier center into the obstacle's local box frame.
+    // Move the skier center into the obstacle's local box frame
     const localX = dx * collider.cos + dz * collider.sin;
     const localZ = -dx * collider.sin + dz * collider.cos;
 
@@ -81,7 +74,7 @@ function circleVsBox(dx, dz, collider) {
     }
 
     // If the skier center is inside the box, use the closest face as the
-    // exit direction. This prevents zero-length normals on direct hits.
+    // exit direction so direct hits do not produce zero-length normals
     const exitX = collider.halfX - Math.abs(localX);
     const exitZ = collider.halfZ - Math.abs(localZ);
     const localNormalX = exitX < exitZ ? (localX >= 0 ? 1 : -1) : 0;
@@ -107,8 +100,8 @@ export function checkSkierCollision(skierPos, chunks) {
             const dx = skierPos.x - worldX;
             const dz = skierPos.z - worldZ;
 
-            // Broad phase: reject anything outside a conservative bounding
-            // circle before doing the exact circle/box math.
+            // Broad phase: reject anything outside the bounding circle
+            // before doing the exact circle/box math
             const broadLimit = SKIER_RADIUS + collider.boundsRadius;
             if (dx * dx + dz * dz > broadLimit * broadLimit) continue;
 

@@ -47,7 +47,6 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
     shoulder.position.set(0.22 * sign, 1.12, 0.02);
     shoulder.rotation.z = 0.16 * sign;
 
-    // CylinderGeometry(radiusTop, radiusBottom, height, segments)
     const upperArm = new THREE.Mesh(
         new THREE.CylinderGeometry(0.04, 0.04, 0.24, 8),
         jacketMat
@@ -69,7 +68,7 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
     hand.position.set(0, -0.24, 0.01);
     hand.castShadow = true;
 
-    // pole pivot sits at the hand position so the pole always follows the grip
+    // Pole pivot sits at the hand so the pole follows the grip
     const polePivot = new THREE.Group();
     polePivot.position.set(0, -0.24, 0.01);
 
@@ -113,7 +112,6 @@ function createLeg(side, pantsMat, bootMat, skiMat) {
     const ankle = new THREE.Group();
     ankle.position.set(0, -0.28, 0.01);
 
-    // BoxGeometry(width, height, depth)
     const boot = new THREE.Mesh(
         new THREE.BoxGeometry(0.09, 0.08, 0.18),
         bootMat
@@ -174,12 +172,11 @@ function createSkier() {
     torso.position.set(0, 1.00, 0);
     torso.castShadow = true;
 
-    // SphereGeometry(radius, widthSegments, heightSegments)
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), skinMat);
     head.position.set(0, 1.35, 0);
     head.castShadow = true;
 
-    // partial sphere - covers only the top half
+    // Partial sphere covering only the top half
     const hat = new THREE.Mesh(
         new THREE.SphereGeometry(0.16, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2),
         hatMat
@@ -242,7 +239,7 @@ const BODY_LEAN = [-0.15,  -0.02];
 export function animateSkier(time) {
     const speed = 1.8;
 
-    // sin mapped to 0-1 to drive the push cycle
+    // sin mapped to 0..1 to drive the push cycle
     const raw = Math.sin(time * speed);
     const t   = (raw + 1.0) * 0.5;
 
@@ -315,8 +312,7 @@ export function releaseSkierEquipment(sceneRoot, impact = {}) {
     for (const part of equipmentParts) {
         if (part.released) continue;
 
-        // Object3D.attach preserves the world transform, so the equipment
-        // starts exactly where it was on the skier before flying away.
+        // attach() preserves the world transform so equipment starts in place
         sceneRoot.attach(part.mesh);
         part.released = true;
 
@@ -366,25 +362,21 @@ export function updateReleasedEquipment(delta) {
     }
 }
 
-// Additive pose adjustments applied AFTER animateSkier each frame.
-// They take the running-cycle baseline and bias it toward a tuck (downhill
-// racing crouch) or a snowplow (V-shaped braking stance). The amount is
-// expected to be a smoothed 0-1 value driven by player input in scene.js.
+// Tuck (W) and snowplow (S) pose biases stacked on top of animateSkier
+const TUCK_BODY_PITCH    = 0.55;
+const TUCK_HIP_BEND      = 0.18;
+const TUCK_KNEE_BEND     = 0.32;
+const TUCK_ARM_BACK      = 0.55;
+const TUCK_FOREARM_PULL  = -0.45;
+const TUCK_POLE_LIFT     = -0.55;
 
-const TUCK_BODY_PITCH    = 0.55;   // extra forward lean of the torso
-const TUCK_HIP_BEND      = 0.18;   // legs draw in slightly under the body
-const TUCK_KNEE_BEND     = 0.32;   // deeper knee compression
-const TUCK_ARM_BACK      = 0.55;   // shoulders rotate so the elbows trail
-const TUCK_FOREARM_PULL  = -0.45;  // forearms tuck close to the chest
-const TUCK_POLE_LIFT     = -0.55;  // poles tucked horizontally under the arms
-
-const PLOW_BODY_PITCH    = -0.20;  // body stands tall, slight backward lean
-const PLOW_HIP_PUSH      = 0.18;   // legs straighten and push forward
-const PLOW_KNEE_RELAX    = -0.18;  // knees less bent
-const PLOW_SKI_TOE_IN    = 0.45;   // ski tips converge: real snowplow wedge
-const PLOW_SKI_PIGEON    = 0.10;   // mild inward roll so the inside edge bites
-const PLOW_ARM_OUT       = 0.32;   // arms swing outward for balance
-const PLOW_POLE_DROP     = 0.35;   // poles drop down and forward
+const PLOW_BODY_PITCH    = -0.20;
+const PLOW_HIP_PUSH      = 0.18;
+const PLOW_KNEE_RELAX    = -0.18;
+const PLOW_SKI_TOE_IN    = 0.45;
+const PLOW_SKI_PIGEON    = 0.10;
+const PLOW_ARM_OUT       = 0.32;
+const PLOW_POLE_DROP     = 0.35;
 
 export function applySkierTuckPose(amount) {
     const t = Math.max(0, Math.min(1, amount));
@@ -397,7 +389,7 @@ export function applySkierTuckPose(amount) {
     leftKneeGroup.rotation.x  += TUCK_KNEE_BEND     * t;
     rightKneeGroup.rotation.x += TUCK_KNEE_BEND     * t;
 
-    // Skis stay parallel and flat -- only the body shape changes.
+    // Skis stay parallel and flat: only the body shape changes
     leftSkiGroup.rotation.x   += TUCK_HIP_BEND      * t * 0.5;
     rightSkiGroup.rotation.x  += TUCK_HIP_BEND      * t * 0.5;
 
@@ -420,11 +412,7 @@ export function applySkierSnowplowPose(amount) {
     leftKneeGroup.rotation.x  += PLOW_KNEE_RELAX    * t;
     rightKneeGroup.rotation.x += PLOW_KNEE_RELAX    * t;
 
-    // Real snowplow: ski tips converge while the tails are pushed apart.
-    // Left ski (at -X) rotates clockwise around Y so its tip (+Z) drifts
-    // toward +X; the right ski mirrors that. The Z-axis roll bites the
-    // inside edge into the snow, which is what actually decelerates the
-    // skier in the physical version of this manoeuvre.
+    // Snowplow wedge: ski tips converge, tails spread, inside edges bite
     leftSkiGroup.rotation.y   = 0.015  - PLOW_SKI_TOE_IN * t;
     rightSkiGroup.rotation.y  = -0.015 + PLOW_SKI_TOE_IN * t;
     leftSkiGroup.rotation.z   =  PLOW_SKI_PIGEON * t;

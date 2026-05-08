@@ -2,10 +2,7 @@ import * as THREE from 'three';
 import { CHUNK_WIDTH } from './terrain.js';
 
 const TRACK_WIDTH = CHUNK_WIDTH - 1.2;
-// Default gap between the skier and the leading edge of the avalanche.
-// scene.js can override this per-frame to shrink (S key, brake) or grow
-// (W key, tuck) the gap, turning the avalanche into a gameplay threat
-// rather than a purely visual element.
+// Default gap between the skier and the front of the avalanche
 export const FRONT_DISTANCE = 10.0;
 const CLOUD_DEPTH = 10.5;
 const CLOUD_HEIGHT = 7.35;
@@ -375,13 +372,9 @@ export function createAvalanche(scene) {
 export function updateAvalanche(avalanche, skierPosition, delta, time, gap = FRONT_DISTANCE) {
     const follow = 1 - Math.exp(-10 * delta);
 
-    // Centre it on the skiable plane; the skier can dodge laterally inside it.
+    // Centre on the skiable plane so the skier can dodge laterally inside it
     avalanche.position.x += (0 - avalanche.position.x) * follow;
     avalanche.position.y = 0;
-    // The leading edge of the cloud sits at skier.z - gap, so a smaller gap
-    // visually pulls the avalanche closer to the skier. The collision check
-    // in scene.js uses the same gap value, so what the player sees on screen
-    // is exactly what triggers the death state.
     avalanche.position.z = skierPosition.z - gap;
 
     for (let i = 0; i < avalanche.userData.veils.length; i++) {
