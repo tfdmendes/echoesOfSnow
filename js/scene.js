@@ -3,7 +3,8 @@ import {
     skier, animateSkier,
     poseSkierForCrash, releaseSkierEquipment,
     resetSkierEquipment, resetSkierPose,
-    updateReleasedEquipment
+    updateReleasedEquipment,
+    applySkierTuckPose, applySkierSnowplowPose
 } from './skier.js';
 import {
     createTerrain, updateTerrain,
@@ -12,7 +13,7 @@ import {
 import { populateChunk, clearChunk, lanternMat, lamppostBulbMat } from './obstacles.js';
 import { checkSkierCollision } from './collision.js';
 import { createScenery, updateScenery } from './scenery.js';
-import { createAvalanche, updateAvalanche } from './avalanche.js';
+import { createAvalanche, updateAvalanche, FRONT_DISTANCE } from './avalanche.js';
 
 
 // ============================================================
@@ -60,6 +61,124 @@ const CRASH_MIN_BODY_Y   = 0.03;
 // Full day/night cycle duration in seconds (~2 minutes)
 const CYCLE_DURATION = 130;
 
+// ---- Speed control: tuck (W) and snowplow (S) ----
+// The two inputs are deliberately asymmetric:
+//   W  -- permanent acquisition. While held, bonusSpeed accumulates and
+//         persists for the rest of the run. Releasing the key does NOT
+//         give that speed back; the player's investment is preserved.
+//   S  -- transient brake. Subtracts a constant amount from the effective
+//         speed only while held; releasing instantly restores full speed.
+// The asymmetry produces the strategic loop: tuck early to bank speed,
+// then spend that buffer on snowplow when obstacles demand caution.
+// Boost acceleration uses a non-linear ramp instead of a constant rate.
+// Pressing W does not slam bonusSpeed up at full power -- the acceleration
+// itself ramps up over BOOST_RAMP_TIME so the gain feels like the skier
+// progressively building momentum into the tuck. Curve is quadratic, so
+// the very first frames give almost no boost, then the rate climbs:
+//   accel(t) = INITIAL + (PEAK - INITIAL) * (t / RAMP_TIME)^2
+// Releasing W (or activating S) resets the hold timer to zero, so a
+// tap-tap pattern never accumulates the ramp.
+const BOOST_ACCEL_INITIAL = 1.0;    // m/s^2 -- gentle kick on first contact
+const BOOST_ACCEL_PEAK    = 4.0;    // m/s^2 -- top rate after the ramp completes
+const BOOST_RAMP_TIME     = 1.5;    // seconds to reach the peak rate
+// Lateral movement is impeded while tucking. Committing to W trades
+// agility for speed: at full boost, lateral speed is reduced by this
+// fraction of LATERAL_SPEED, making A/D dodging visibly harder.
+const LATERAL_W_PENALTY   = 0.65;   // 0..1; full boost cuts lateral speed by this fraction
+// Brake is multiplicative on the full speed (baseSpeed + bonusSpeed). An
+// additive constant lost its bite once bonusSpeed grew unbounded -- 8 m/s
+// off 60 m/s is barely felt -- so a percentage cut keeps the snowplow
+// feeling like a real brake at any speed: full S always halves whatever
+// speed the player has accumulated.
+const BRAKE_FACTOR      = 0.50;     // 0..1; full S reduces effective speed by this fraction
+// Persistent cost of braking. While S is held, bonusSpeed is shaved at
+// this rate, so releasing the brake leaves the player slightly slower
+// than they were before. The decay is gated by brakeAmount so it follows
+// the same fade-in curve as the multiplicative speed cut.
+const BRAKE_DECAY_RATE  = 6.0;      // m/s of bonusSpeed lost per second of full braking
+const SPEED_FLOOR       = SPEED_INITIAL * 0.5; // never let the player effectively stop
+const INPUT_SMOOTHING   = 6.0;      // exponential smoothing rate (1/s) for boost/brake POSE amounts
+
+// ---- Avalanche gap (damped spring / rubber-band model) ----
+// The gap is intentionally decoupled from the speed integral. If it were
+// a strict integral of (gameSpeed - baseSpeed), a player who held W long
+// enough would bank enough bonusSpeed to permanently outrun the avalanche
+// and the snowplow brake would become cosmetic. Instead the gap behaves
+// like a spring anchored at GAP_DEFAULT:
+//   * W applies an outward push proportional to boostAmount
+//   * S applies an inward pull proportional to brakeAmount
+//   * A restoring force biases the gap toward GAP_DEFAULT regardless
+// While sustained-tucking the equilibrium settles at GAP_DEFAULT +
+// GAP_BOOST_RATE / GAP_PULL_FACTOR (a few metres of margin), bounded by
+// the spring rather than by GAP_MAX. S then always has a real effect on
+// the gap, no matter how long the player has been tucking.
+//
+// This is an arcade concession: bonusSpeed is still permanent for
+// gameSpeed / score / terrain scrolling, but the avalanche is not
+// "fooled" by accumulated speed -- it adapts to maintain pressure.
+const GAP_DEFAULT      = FRONT_DISTANCE;  // resting gap (also the spring anchor)
+const GAP_MAX          = 28.0;            // hard visual clip on the spring; sized to fit the W equilibrium with headroom
+const GAP_DEATH        = 2.0;             // crossing this triggers the avalanche fall
+// Tuned so W reaches a margin of ~7.5 m within the first second of holding
+// the key (75 % above default), with a sustained equilibrium at roughly
+// 27 m -- nearly three times the default distance. The pull factor stays
+// soft enough that the spring does not aggressively snap the gap back
+// while W is held, but stiff enough that releasing W returns the gap to
+// default in a couple of seconds.
+const GAP_BOOST_RATE   = 10.0;            // outward force at full boost (m/s)
+const GAP_BRAKE_RATE   = 10.0;            // inward force at full brake (m/s)
+const GAP_PULL_FACTOR  = 0.6;             // restoring force per metre of displacement (1/s)
+
+// ---- Avalanche-fall (death by being overrun) ----
+const AVALANCHE_FALL_DURATION   = 1.4;
+const AVALANCHE_FALL_PUSH       = 6.0;    // forward push while being engulfed
+const AVALANCHE_FALL_DROP       = 9.0;    // gravity for the topple
+const AVALANCHE_FALL_PITCH      = 1.1;    // how far the body pitches forward
+
+// ---- Speed lines (UI overlay) ----
+// Anime / racing-game style streaks rendered onto a 2D canvas overlay
+// stacked above the WebGL viewport. The implementation follows the
+// "comet particle" model used in production speed-line effects:
+//   * each streak is an independent particle with its own life cycle,
+//     not a slot in a fixed-position pool;
+//   * each particle is drawn as a gradient stroke that fades from
+//     transparent at the tail to opaque at the head, producing the
+//     bullet/comet shape that conveys speed without looking like rigid
+//     pencil lines;
+//   * a sine-shaped life envelope (alpha = sin(pi * t)) makes every
+//     streak fade in at birth and fade out at death, eliminating pops;
+//   * spawn radius is anchored to the OUTER ring of the viewport (in
+//     screen space, not polar space), so the streaks form a peripheral
+//     vignette that frames the action instead of cluttering the centre
+//     of the screen. The drift direction still points radially outward
+//     so the field reads as forward motion;
+//   * visibility is gated by the smoothed boost amount, so streaks only
+//     appear while the player is actively tucking (W). They fade in and
+//     out with W press/release thanks to the input smoothing.
+//
+// Approach inspired by canonical canvas examples of anime speed lines
+// (e.g. CodePen "Anime/Manga Speed lines" by jsonyeung).
+const SPEED_LINE_COUNT          = 28;       // pool size; subtle density
+const SPEED_LINE_THRESHOLD_LO   = SPEED_INITIAL * 1.3;   // below this no streaks render at all (~18 m/s)
+const SPEED_LINE_THRESHOLD_HI   = SPEED_INITIAL * 3.5;   // at and above this the field is at full strength (~49 m/s)
+const SPEED_LINE_MAX_OPACITY    = 0.50;     // peak per-line alpha multiplier at THRESHOLD_HI
+const SPEED_LINE_OPACITY_CURVE  = 1.3;      // exponent on the speed factor (>1 = slow onset, sharp climb)
+const SPEED_LINE_MOTION_GAIN    = 9.0;      // px/s per (m/s) of gameSpeed -- base outward drift rate
+const SPEED_LINE_LIFE_MIN       = 0.30;     // shortest streak lifetime (s)
+const SPEED_LINE_LIFE_MAX       = 0.85;     // longest streak lifetime (s)
+const SPEED_LINE_TAIL_MIN       = 28;       // shortest tail length (px)
+const SPEED_LINE_TAIL_MAX       = 85;       // longest tail length (px)
+const SPEED_LINE_WIDTH_MIN      = 0.8;      // thinnest stroke (px)
+const SPEED_LINE_WIDTH_MAX      = 1.8;      // thickest stroke (px)
+// Spawn radius is expressed as a fraction of the distance from the screen
+// centre to the viewport edge ALONG THE PARTICLE'S OWN RADIAL DIRECTION.
+// This keeps spawns inside the visible rectangle regardless of aspect ratio
+// and confines streaks to the peripheral vignette band.
+const SPEED_LINE_RADIUS_INNER   = 0.55;
+const SPEED_LINE_RADIUS_OUTER   = 0.92;
+const SPEED_LINE_SPEED_MUL_MIN  = 0.70;     // per-line variation on outward drift speed
+const SPEED_LINE_SPEED_MUL_MAX  = 1.30;
+
 
 // ============================================================
 //  GAME STATE
@@ -92,7 +211,30 @@ let fallStartRotX = 0;
 let fallStartRotY = 0;
 let fallStartRotZ = 0;
 
-const keys = { left: false, right: false };
+const keys = { left: false, right: false, boost: false, brake: false };
+
+// Smoothed pose intensities (0-1). The raw key state is binary, but the
+// visual pose blending and the brake force read these continuous values so
+// transitions stay visually smooth. The PERMANENT speed accumulation uses
+// the raw keys directly -- there is no need to smooth a one-way integrator.
+let boostAmount = 0;
+let brakeAmount = 0;
+
+// Permanent speed accumulator. Built up by W, never decays during a run,
+// reset only when the player restarts. Adds on top of the natural baseSpeed
+// ramp, so the player's tucking investment persists indefinitely.
+let bonusSpeed = 0;
+
+// Continuous time W has been held (with no S). Drives the non-linear
+// boost-acceleration ramp: the longer it grows, the harder bonusSpeed
+// accumulates, until it caps at BOOST_RAMP_TIME. Resets to zero on any
+// release of W or activation of S.
+let boostHoldTime = 0;
+
+// Avalanche gap state. Evolves with the speed differential each frame.
+// During an avalanche fall it is forced rapidly toward 0 to drive the
+// visual catch-up.
+let avalancheGap = GAP_DEFAULT;
 
 let camMode = 0;                    // 0 = behind, 1 = first-person, 2 = facing
 const camLook = new THREE.Vector3(0, 0.8, 4);  // smoothed lookAt target
@@ -439,6 +581,167 @@ const avalanche = createAvalanche(scene);
 
 
 // ============================================================
+//  SPEED LINES (UI overlay -- 2D canvas above the WebGL viewport)
+// ============================================================
+//
+// A full-screen <canvas> sits above the renderer. Every frame we clear it
+// and stroke a small set of radial streaks emanating from the centre.
+// Implementing this as a UI layer (instead of three.js meshes parented to
+// the skier) anchors the streaks to the player's view rather than to any
+// scene geometry, so they read as raw motion perception -- the way speed
+// lines work in racing games and anime panels.
+//
+// The pool is pre-allocated. Each frame we update a radial coordinate
+// per line and stroke it; the cost is one clearRect plus N short stroke
+// calls, which is dramatically cheaper than the equivalent three.js draw
+// calls would be.
+
+const speedLineCanvas = document.createElement('canvas');
+// z-index sits between the WebGL canvas (no explicit z-index, default
+// stacking) and the HUD (z-index 10). The game-over overlay (20) and menu
+// (30) cover the streaks naturally when they are visible.
+speedLineCanvas.style.cssText =
+    'position:fixed; inset:0; pointer-events:none; z-index:5;';
+document.body.appendChild(speedLineCanvas);
+const speedLineCtx = speedLineCanvas.getContext('2d');
+
+function resizeSpeedLineCanvas() {
+    speedLineCanvas.width  = window.innerWidth;
+    speedLineCanvas.height = window.innerHeight;
+}
+resizeSpeedLineCanvas();
+window.addEventListener('resize', resizeSpeedLineCanvas);
+
+// Pre-allocated particle pool. Each line is a self-contained particle
+// (position, direction, life, randomized appearance). When its life
+// elapses it respawns at a fresh random position. This is the standard
+// shape of anime-style speed-line effects: many independent ephemeral
+// streaks rather than a rigid grid sliding past the viewport.
+function respawnSpeedLine(line) {
+    const cx = speedLineCanvas.width  / 2;
+    const cy = speedLineCanvas.height / 2;
+
+    // Pick an outward radial direction first.
+    const angle = Math.random() * Math.PI * 2;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+
+    // Anisotropic edge distance: how far we can travel from the centre
+    // along (dx, dy) before crossing the viewport boundary. Clipping the
+    // spawn fraction to this rather than to the half-diagonal keeps every
+    // particle inside the visible rectangle, regardless of aspect ratio,
+    // and makes "outer 55-92%" mean the same thing on every side.
+    const tEdgeX = Math.abs(dx) > 0.0001 ? Math.abs(cx / dx) : Infinity;
+    const tEdgeY = Math.abs(dy) > 0.0001 ? Math.abs(cy / dy) : Infinity;
+    const edgeDistance = Math.min(tEdgeX, tEdgeY);
+
+    const radiusFraction = SPEED_LINE_RADIUS_INNER
+        + Math.random() * (SPEED_LINE_RADIUS_OUTER - SPEED_LINE_RADIUS_INNER);
+    const r = edgeDistance * radiusFraction;
+
+    line.dirX = dx;
+    line.dirY = dy;
+    line.x    = cx + dx * r;
+    line.y    = cy + dy * r;
+
+    line.life          = 0;
+    line.lifeDuration  = SPEED_LINE_LIFE_MIN
+        + Math.random() * (SPEED_LINE_LIFE_MAX - SPEED_LINE_LIFE_MIN);
+    line.tailLength    = SPEED_LINE_TAIL_MIN
+        + Math.random() * (SPEED_LINE_TAIL_MAX - SPEED_LINE_TAIL_MIN);
+    line.width         = SPEED_LINE_WIDTH_MIN
+        + Math.random() * (SPEED_LINE_WIDTH_MAX - SPEED_LINE_WIDTH_MIN);
+    line.speedMul      = SPEED_LINE_SPEED_MUL_MIN
+        + Math.random() * (SPEED_LINE_SPEED_MUL_MAX - SPEED_LINE_SPEED_MUL_MIN);
+    line.baseAlpha     = 0.55 + Math.random() * 0.45;
+}
+
+const speedLines = [];
+for (let i = 0; i < SPEED_LINE_COUNT; i++) {
+    const line = {
+        // Stratified per-line activation: line 0 turns on first, line N-1
+        // last. As gameSpeed climbs from THRESHOLD_LO to HI more lines
+        // unlock, so the visible density tracks the player's speed
+        // instead of being a fixed count. Small jitter prevents a
+        // visible "ladder" of streaks switching on at round speed values.
+        activationSpeed: SPEED_LINE_THRESHOLD_LO
+            + (i / Math.max(1, SPEED_LINE_COUNT - 1))
+              * (SPEED_LINE_THRESHOLD_HI - SPEED_LINE_THRESHOLD_LO)
+            + (Math.random() - 0.5) * 1.5
+    };
+    respawnSpeedLine(line);
+    // Spread initial life phases so the field appears already populated
+    // on the first frame rather than every streak being newborn at once.
+    line.life = Math.random();
+    speedLines.push(line);
+}
+
+function updateSpeedLines(delta, currentSpeed) {
+    const ctx = speedLineCtx;
+    ctx.clearRect(0, 0, speedLineCanvas.width, speedLineCanvas.height);
+
+    // Visibility is now keyed off the absolute gameSpeed: streaks only
+    // appear once the player crosses THRESHOLD_LO, and reach full
+    // strength at THRESHOLD_HI. The exponent biases the curve so the
+    // onset is subtle and the climb sharpens at higher speeds, which
+    // matches how the perception of speed actually scales.
+    const linearFactor = Math.max(0, Math.min(1,
+        (currentSpeed - SPEED_LINE_THRESHOLD_LO) /
+        (SPEED_LINE_THRESHOLD_HI - SPEED_LINE_THRESHOLD_LO)
+    ));
+    const speedFactor = Math.pow(linearFactor, SPEED_LINE_OPACITY_CURVE);
+    if (speedFactor <= 0.001) return;
+
+    // Motion rate also tracks gameSpeed: streaks drift slowly at the
+    // bottom of the visible range and tear past at high speed.
+    const baseStep = currentSpeed * SPEED_LINE_MOTION_GAIN * delta;
+    ctx.lineCap = 'round';
+
+    for (const line of speedLines) {
+        // Per-line gating: a streak is dormant until gameSpeed clears
+        // its activationSpeed. Density rises with absolute speed.
+        if (currentSpeed <= line.activationSpeed) continue;
+
+        line.life += delta / line.lifeDuration;
+        if (line.life >= 1) {
+            respawnSpeedLine(line);
+            continue;
+        }
+
+        line.x += line.dirX * baseStep * line.speedMul;
+        line.y += line.dirY * baseStep * line.speedMul;
+
+        // Sine envelope on life: 0 at birth, peaks at mid-life, 0 at
+        // death. This is the cleanest way to fade a particle in and out
+        // smoothly without an explicit two-phase ramp.
+        const lifeFade = Math.sin(line.life * Math.PI);
+        const headAlpha = lifeFade * line.baseAlpha
+            * speedFactor * SPEED_LINE_MAX_OPACITY;
+        if (headAlpha < 0.01) continue;
+
+        // Tail anchor sits BEHIND the head along the inverse motion
+        // vector. The gradient runs transparent (tail) -> bright (head),
+        // producing a comet/bullet streak that visually points in the
+        // direction of travel.
+        const tailX = line.x - line.dirX * line.tailLength;
+        const tailY = line.y - line.dirY * line.tailLength;
+
+        const grad = ctx.createLinearGradient(tailX, tailY, line.x, line.y);
+        grad.addColorStop(0.00, 'rgba(255,255,255,0)');
+        grad.addColorStop(0.55, 'rgba(255,255,255,' + (headAlpha * 0.35).toFixed(3) + ')');
+        grad.addColorStop(1.00, 'rgba(255,255,255,' + headAlpha.toFixed(3) + ')');
+
+        ctx.strokeStyle = grad;
+        ctx.lineWidth   = line.width;
+        ctx.beginPath();
+        ctx.moveTo(tailX, tailY);
+        ctx.lineTo(line.x, line.y);
+        ctx.stroke();
+    }
+}
+
+
+// ============================================================
 //  HUD & GAME OVER OVERLAY
 // ============================================================
 
@@ -535,8 +838,10 @@ controlsHint.style.cssText =
     'font-size:clamp(10px,1.4vw,14px); color:#7890a8; opacity:0.6;' +
     'letter-spacing:2px; text-align:center; user-select:none;';
 controlsHint.innerHTML =
-    'A / &#8592; &mdash; Move Left &nbsp;&nbsp;&nbsp;' +
-    'D / &#8594; &mdash; Move Right &nbsp;&nbsp;&nbsp;' +
+    'A / &#8592; &mdash; Left &nbsp;&nbsp;&nbsp;' +
+    'D / &#8594; &mdash; Right &nbsp;&nbsp;&nbsp;' +
+    'W / &#8593; &mdash; Tuck (faster) &nbsp;&nbsp;&nbsp;' +
+    'S / &#8595; &mdash; Snowplow (brake) &nbsp;&nbsp;&nbsp;' +
     'T &mdash; Camera';
 menuOverlay.appendChild(controlsHint);
 
@@ -568,6 +873,8 @@ document.body.appendChild(menuOverlay);
 document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = true;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
+    if (e.code === 'KeyW' || e.code === 'ArrowUp')    keys.boost = true;
+    if (e.code === 'KeyS' || e.code === 'ArrowDown')  keys.brake = true;
     if (e.code === 'KeyT') { camMode = (camMode + 1) % 3; }
     if (e.code === 'Space' && gameState === 'menu')     startGame();
     if (e.code === 'KeyR'  && gameState === 'gameover') restartGame();
@@ -576,6 +883,8 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => {
     if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = false;
     if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = false;
+    if (e.code === 'KeyW' || e.code === 'ArrowUp')    keys.boost = false;
+    if (e.code === 'KeyS' || e.code === 'ArrowDown')  keys.brake = false;
 });
 
 window.addEventListener('resize', () => {
@@ -668,6 +977,27 @@ function beginCollisionFall(collision) {
     });
 }
 
+// Triggered when the avalanche gap collapses below GAP_DEATH. The skier
+// is overrun: we forward-pitch the body as if hit from behind and let the
+// existing fall update integrate the rest. The gap is then forced toward
+// zero in the main loop so the cloud visibly engulfs the skier instead of
+// staying parked at its resting position.
+function beginAvalancheFall() {
+    gameState = 'falling';
+    fallMode  = 'avalanche';
+    fallTimer = 0;
+    fallDir   = 0;
+    fallVelX  = 0;
+    fallVelY  = 0;
+    fallVelZ  = AVALANCHE_FALL_PUSH;
+    fallSpinX = 0;
+    fallSpinY = 0;
+    fallSpinZ = 0;
+    fallStartRotX = skier.rotation.x;
+    fallStartRotY = skier.rotation.y;
+    fallStartRotZ = skier.rotation.z;
+}
+
 function keepCrashBodyAboveSnow() {
     skier.updateMatrixWorld(true);
     skierBounds.setFromObject(skier);
@@ -717,6 +1047,17 @@ function restartGame() {
     fallStartRotY = 0;
     fallStartRotZ = 0;
 
+    // Reset speed-control state so a fresh run does not inherit residual
+    // boost/brake or accumulated bonus from the dying frames of the
+    // previous run.
+    keys.boost = false;
+    keys.brake = false;
+    boostAmount = 0;
+    brakeAmount = 0;
+    bonusSpeed = 0;
+    boostHoldTime = 0;
+    avalancheGap = GAP_DEFAULT;
+
     for (let i = 0; i < chunks.length; i++) {
         clearChunk(chunks[i]);
         chunks[i].position.set(0, 0, i * CHUNK_LENGTH);
@@ -746,15 +1087,81 @@ function animate(now) {
     // -- Game update (only while playing) --
     if (gameState === 'playing') {
         elapsed  += delta;
-        gameSpeed = SPEED_INITIAL + elapsed * SPEED_RAMP;
+
+        // Smoothed pose intensities. These drive the visual lean (tuck) and
+        // wedge (snowplow) blends, plus the brake force. Snowplow wins on
+        // conflict: the player cannot physically be both tucked and in a
+        // wedge stance at the same time, so we collapse the boost target
+        // to zero while S is held.
+        const boostTarget = (keys.boost && !keys.brake) ? 1.0 : 0.0;
+        const brakeTarget = keys.brake ? 1.0 : 0.0;
+        const smooth = 1 - Math.exp(-INPUT_SMOOTHING * delta);
+        boostAmount += (boostTarget - boostAmount) * smooth;
+        brakeAmount += (brakeTarget - brakeAmount) * smooth;
+
+        // Permanent boost accumulation with a non-linear ramp: the longer
+        // W is held, the harder the rate of accumulation. The first frames
+        // give almost nothing -- the player has to commit to the tuck for
+        // the speed to start building meaningfully. Releasing W (or being
+        // overridden by S) wipes the ramp, so tap-tapping is never as
+        // effective as a sustained hold.
+        if (keys.boost && !keys.brake) {
+            boostHoldTime += delta;
+            const rampT = Math.min(1, boostHoldTime / BOOST_RAMP_TIME);
+            const accel = BOOST_ACCEL_INITIAL
+                + (BOOST_ACCEL_PEAK - BOOST_ACCEL_INITIAL) * (rampT * rampT);
+            bonusSpeed += accel * delta;
+        } else {
+            boostHoldTime = 0;
+        }
+
+        // Persistent brake cost: while S is held, bonusSpeed is shaved
+        // away. After releasing S, the player resumes at a slightly lower
+        // speed than they had before braking, so snowplowing carries a
+        // real long-term price. brakeAmount is the smoothed input so the
+        // decay fades in/out consistent with the visual brake force.
+        if (brakeAmount > 0.001 && bonusSpeed > 0) {
+            bonusSpeed = Math.max(0, bonusSpeed - brakeAmount * BRAKE_DECAY_RATE * delta);
+        }
+
+        // Effective game speed:
+        //   baseSpeed   = SPEED_INITIAL + elapsed * SPEED_RAMP   (natural ramp; the avalanche moves at this rate)
+        //   bonusSpeed  = persistent W investment                (added on top, kept across input releases)
+        //   brake       = multiplicative reduction               (full S keeps only (1 - BRAKE_FACTOR) of the speed)
+        // The multiplicative model ensures the brake stays meaningful at
+        // any accumulated speed: it always cuts the same fraction off,
+        // so a player who has banked a large bonusSpeed feels the same
+        // proportional slowdown as one who has not.
+        const baseSpeed = SPEED_INITIAL + elapsed * SPEED_RAMP;
+        const fullSpeed = baseSpeed + bonusSpeed;
+        gameSpeed = Math.max(SPEED_FLOOR, fullSpeed * (1 - brakeAmount * BRAKE_FACTOR));
         score    += gameSpeed * delta;
+
+        // Rubber-band gap dynamics. The gap is a spring anchored at
+        // GAP_DEFAULT: W applies an outward push, S applies an inward
+        // pull, and the restoring force pulls back toward the resting
+        // gap continuously. Holding W indefinitely settles the gap a
+        // few metres above default (NOT at GAP_MAX), which means the
+        // brake always has a meaningful window to close the gap --
+        // overcoming both the boost push and the displacement gives
+        // S real consequence regardless of how much speed the player
+        // has banked.
+        const gapBoostForce = boostAmount * GAP_BOOST_RATE;
+        const gapBrakeForce = brakeAmount * GAP_BRAKE_RATE;
+        const gapRestoring  = GAP_PULL_FACTOR * (avalancheGap - GAP_DEFAULT);
+        avalancheGap += (gapBoostForce - gapBrakeForce - gapRestoring) * delta;
+        avalancheGap = Math.max(0, Math.min(GAP_MAX, avalancheGap));
 
         updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
 
         // Lateral movement. No hard clamp -- the skier is allowed to cross
         // the boundary flags so the fall can be triggered by the overshoot.
-        if (keys.left)  skier.position.x += LATERAL_SPEED * delta;
-        if (keys.right) skier.position.x -= LATERAL_SPEED * delta;
+        // The effective lateral speed shrinks while tucking (boostAmount
+        // > 0): a committed downhill tuck trades agility for forward speed,
+        // so dodging A/D becomes visibly harder when W is held.
+        const lateralSpeed = LATERAL_SPEED * (1 - boostAmount * LATERAL_W_PENALTY);
+        if (keys.left)  skier.position.x += lateralSpeed * delta;
+        if (keys.right) skier.position.x -= lateralSpeed * delta;
 
         // Lean into turns
         let targetLean = 0;
@@ -763,17 +1170,29 @@ function animate(now) {
         skier.rotation.z += (targetLean - skier.rotation.z) * LEAN_SPEED * delta;
 
         animateSkier(elapsed);
+        // Apply tuck/snowplow on top of the running cycle. Order matters:
+        // animateSkier writes the baseline pose first, then these biases
+        // add (or override, in the case of ski Y/Z) on top of it.
+        applySkierTuckPose(boostAmount);
+        applySkierSnowplowPose(brakeAmount);
 
-        // Boundary check: crossing either flag line triggers the fall.
-        // Done before collision so a skier that overshoots exactly at a
-        // boundary obstacle still falls instead of colliding.
+        // Death checks, in order of priority:
+        //   1. Boundary slip (drives the existing edge-fall)
+        //   2. Obstacle collision
+        //   3. Avalanche overrun (new) -- the gap collapsed to lethal range.
+        // The avalanche check is last so a player who is also crossing the
+        // ridge edge or hitting an obstacle still gets the more specific
+        // animation for that case.
         if (Math.abs(skier.position.x) > LATERAL_LIMIT) {
             beginEdgeFall();
         }
-        // Collision
         else {
             const collision = checkSkierCollision(skier.position, chunks);
-            if (collision) beginCollisionFall(collision);
+            if (collision) {
+                beginCollisionFall(collision);
+            } else if (avalancheGap <= GAP_DEATH) {
+                beginAvalancheFall();
+            }
         }
 
         // HUD
@@ -801,6 +1220,33 @@ function animate(now) {
             updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
 
             if (fallTimer >= FALL_DURATION) showGameOver();
+        } else if (fallMode === 'avalanche') {
+            // Body topples forward as if shoved from behind, then falls. We
+            // also drive the gap rapidly toward zero so the cloud overruns
+            // the camera in the same beat as the body hits the snow.
+            fallVelY -= AVALANCHE_FALL_DROP * delta;
+            skier.position.y += fallVelY * delta;
+            skier.position.z += fallVelZ * delta;
+
+            if (skier.position.y < CRASH_GROUND_Y) {
+                skier.position.y = CRASH_GROUND_Y;
+                if (fallVelY < 0) fallVelY = 0;
+            }
+
+            const t = Math.min(1, fallTimer / AVALANCHE_FALL_DURATION);
+            const eased = 1 - Math.pow(1 - t, 2);
+            skier.rotation.x = fallStartRotX + AVALANCHE_FALL_PITCH * eased;
+
+            // Gap collapses faster than it can during gameplay so the cloud
+            // visibly closes the remaining distance before the overlay shows.
+            avalancheGap = Math.max(-3.0, avalancheGap - 14 * delta);
+
+            // Slow but continuing world motion preserves the sense of being
+            // dragged forward by the slide while the player loses control.
+            updateTerrain(chunks, gameSpeed * 0.6, delta, onChunkRecycle);
+            gameSpeed *= Math.exp(-1.0 * delta);
+
+            if (fallTimer >= AVALANCHE_FALL_DURATION) showGameOver();
         } else {
             fallVelY -= CRASH_GRAVITY * delta;
 
@@ -847,7 +1293,19 @@ function animate(now) {
     // Keep the mountain ring centred on the player's forward position
     // so the horizon appears infinite regardless of how far the skier goes.
     updateScenery(sceneryRing, skier.position.z);
-    updateAvalanche(avalanche, skier.position, delta, now * 0.001);
+    updateAvalanche(avalanche, skier.position, delta, now * 0.001, avalancheGap);
+
+    // Hide speed lines in the front-facing camera (they would emanate behind
+    // the player from the camera's perspective, which reads as nonsense)
+    // and during any fall state -- once the player loses control the streaks
+    // would conflict with the avalanche cloud or the crash tumble.
+    //
+    // Visibility is gated purely by gameSpeed: streaks render once the
+    // player crosses THRESHOLD_LO and ramp up toward THRESHOLD_HI. There
+    // is no separate input gate, so the streaks remain visible whenever
+    // the player is actually moving fast, regardless of why.
+    const showStreaks = (gameState === 'playing' && camMode !== 2);
+    updateSpeedLines(delta, showStreaks ? gameSpeed : 0);
 
     updateCycle(cycleT);
 
@@ -925,14 +1383,20 @@ function animate(now) {
     // -- Dynamic camera (3 modes, smooth transitions) --
     // Uses exponential damping: 1 - e^(-speed * dt) gives a frame-rate
     // independent smoothing factor that feels identical at 30 or 144 fps.
-    const speedFactor = (gameSpeed - SPEED_INITIAL) / 30;
+    //
+    // The camera response to speed is intentionally clipped: bonusSpeed
+    // is unbounded, so without a cap the camera would drift up and back
+    // forever as the player accumulates speed. Capping the speed factor
+    // at 1 (with a slower divisor) keeps the camera framing stable past
+    // a moderate "fast enough" threshold.
+    const speedFactor = Math.min(1, Math.max(0, (gameSpeed - SPEED_INITIAL) / 50));
     let targetPos, targetLook;
 
     if (camMode === 0) {
         // Behind (original)
         targetPos  = { x: skier.position.x * 0.85,
-                       y: 3.0 + speedFactor * 1.8,
-                       z: -5.0 - speedFactor * 2.5 };
+                       y: 3.0 + speedFactor * 1.0,
+                       z: -5.0 - speedFactor * 1.5 };
         targetLook = { x: skier.position.x * 0.6, y: 0.8, z: 4 };
     } else if (camMode === 1) {
         // First-person
@@ -941,8 +1405,8 @@ function animate(now) {
     } else {
         // Facing skier (from the front)
         targetPos  = { x: skier.position.x * 0.85,
-                       y: 3.0 + speedFactor * 1.8,
-                       z: 10 + speedFactor * 2.5 };
+                       y: 3.0 + speedFactor * 1.0,
+                       z: 10 + speedFactor * 1.5 };
         targetLook = { x: skier.position.x, y: 0.8, z: 0 };
     }
 

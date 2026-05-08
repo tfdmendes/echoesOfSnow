@@ -366,6 +366,76 @@ export function updateReleasedEquipment(delta) {
     }
 }
 
+// Additive pose adjustments applied AFTER animateSkier each frame.
+// They take the running-cycle baseline and bias it toward a tuck (downhill
+// racing crouch) or a snowplow (V-shaped braking stance). The amount is
+// expected to be a smoothed 0-1 value driven by player input in scene.js.
+
+const TUCK_BODY_PITCH    = 0.55;   // extra forward lean of the torso
+const TUCK_HIP_BEND      = 0.18;   // legs draw in slightly under the body
+const TUCK_KNEE_BEND     = 0.32;   // deeper knee compression
+const TUCK_ARM_BACK      = 0.55;   // shoulders rotate so the elbows trail
+const TUCK_FOREARM_PULL  = -0.45;  // forearms tuck close to the chest
+const TUCK_POLE_LIFT     = -0.55;  // poles tucked horizontally under the arms
+
+const PLOW_BODY_PITCH    = -0.20;  // body stands tall, slight backward lean
+const PLOW_HIP_PUSH      = 0.18;   // legs straighten and push forward
+const PLOW_KNEE_RELAX    = -0.18;  // knees less bent
+const PLOW_SKI_TOE_IN    = 0.45;   // ski tips converge: real snowplow wedge
+const PLOW_SKI_PIGEON    = 0.10;   // mild inward roll so the inside edge bites
+const PLOW_ARM_OUT       = 0.32;   // arms swing outward for balance
+const PLOW_POLE_DROP     = 0.35;   // poles drop down and forward
+
+export function applySkierTuckPose(amount) {
+    const t = Math.max(0, Math.min(1, amount));
+    if (t <= 0) return;
+
+    upperBodyGroup.rotation.x += TUCK_BODY_PITCH    * t;
+
+    leftLegGroup.rotation.x   += TUCK_HIP_BEND      * t;
+    rightLegGroup.rotation.x  += TUCK_HIP_BEND      * t;
+    leftKneeGroup.rotation.x  += TUCK_KNEE_BEND     * t;
+    rightKneeGroup.rotation.x += TUCK_KNEE_BEND     * t;
+
+    // Skis stay parallel and flat -- only the body shape changes.
+    leftSkiGroup.rotation.x   += TUCK_HIP_BEND      * t * 0.5;
+    rightSkiGroup.rotation.x  += TUCK_HIP_BEND      * t * 0.5;
+
+    leftArmGroup.rotation.x   += TUCK_ARM_BACK      * t;
+    rightArmGroup.rotation.x  += TUCK_ARM_BACK      * t;
+    leftForearmGroup.rotation.x  += TUCK_FOREARM_PULL * t;
+    rightForearmGroup.rotation.x += TUCK_FOREARM_PULL * t;
+    leftPoleGroup.rotation.x  += TUCK_POLE_LIFT     * t;
+    rightPoleGroup.rotation.x += TUCK_POLE_LIFT     * t;
+}
+
+export function applySkierSnowplowPose(amount) {
+    const t = Math.max(0, Math.min(1, amount));
+    if (t <= 0) return;
+
+    upperBodyGroup.rotation.x += PLOW_BODY_PITCH    * t;
+
+    leftLegGroup.rotation.x   += PLOW_HIP_PUSH      * t;
+    rightLegGroup.rotation.x  += PLOW_HIP_PUSH      * t;
+    leftKneeGroup.rotation.x  += PLOW_KNEE_RELAX    * t;
+    rightKneeGroup.rotation.x += PLOW_KNEE_RELAX    * t;
+
+    // Real snowplow: ski tips converge while the tails are pushed apart.
+    // Left ski (at -X) rotates clockwise around Y so its tip (+Z) drifts
+    // toward +X; the right ski mirrors that. The Z-axis roll bites the
+    // inside edge into the snow, which is what actually decelerates the
+    // skier in the physical version of this manoeuvre.
+    leftSkiGroup.rotation.y   = 0.015  - PLOW_SKI_TOE_IN * t;
+    rightSkiGroup.rotation.y  = -0.015 + PLOW_SKI_TOE_IN * t;
+    leftSkiGroup.rotation.z   =  PLOW_SKI_PIGEON * t;
+    rightSkiGroup.rotation.z  = -PLOW_SKI_PIGEON * t;
+
+    leftArmGroup.rotation.z   += -PLOW_ARM_OUT * t;
+    rightArmGroup.rotation.z  +=  PLOW_ARM_OUT * t;
+    leftPoleGroup.rotation.x  += PLOW_POLE_DROP * t;
+    rightPoleGroup.rotation.x += PLOW_POLE_DROP * t;
+}
+
 export function poseSkierForCrash(progress, side) {
     const t = 1 - Math.pow(1 - Math.max(0, Math.min(1, progress)), 3);
     const s = side || 1;
