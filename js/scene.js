@@ -10,10 +10,13 @@ import {
     createTerrain, updateTerrain,
     CHUNK_LENGTH, CHUNK_WIDTH, PLAY_HALF_X
 } from './terrain.js';
-import { populateChunk, clearChunk, lanternMat, lamppostBulbMat } from './obstacles.js';
+import { populateChunk, clearChunk, lanternMat, lamppostBulbMat, updateFireflies } from './obstacles.js';
 import { checkSkierCollision } from './collision.js';
 import { createScenery, updateScenery } from './scenery.js';
 import { createAvalanche, updateAvalanche, FRONT_DISTANCE } from './avalanche.js';
+import {
+    getBiomeForNextChunk, resetBiomeProgression, getBiome, BIOME_BASE
+} from './biomes.js';
 
 
 // ============================================================
@@ -23,8 +26,9 @@ import { createAvalanche, updateAvalanche, FRONT_DISTANCE } from './avalanche.js
 const SPEED_INITIAL  = 14;
 const SPEED_RAMP     = 0.4;
 const LATERAL_SPEED  = 6;
-// Crossing PLAY_HALF_X triggers the boundary fall; kept in sync with terrain.js
-const LATERAL_LIMIT  = PLAY_HALF_X;
+// Per-chunk biome may shrink this; updated each frame from the chunk under the skier
+const LATERAL_LIMIT_DEFAULT = PLAY_HALF_X;
+let currentLateralLimit = PLAY_HALF_X;
 const LEAN_ANGLE     = 0.32;
 const LEAN_SPEED     = 8;
 const SAFE_CHUNKS    = 2;
@@ -132,6 +136,9 @@ let fallStartRotZ = 0;
 
 const keys = { left: false, right: false, boost: false, brake: false };
 
+// Settings — start position in the day/night cycle, mutable from the menu slider
+let startCycleOffset = 0.12;
+
 // Smoothed 0..1 pose intensities driven by the raw keys
 let boostAmount = 0;
 let brakeAmount = 0;
@@ -205,10 +212,11 @@ scene.add(sunLight);
 
 // PointLight pool reassigned to the closest lit obstacles each frame so the
 // scene avoids creating a light per obstacle (which would tank framerate)
-const NIGHT_LIGHT_COUNT = 4;
+const NIGHT_LIGHT_COUNT = 8;
 const nightLights = [];
 for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
-    const pl = new THREE.PointLight(0xffaa44, 0, 28, 1.2);
+    const pl = new THREE.PointLight(0xffaa44, 0, 40, 1.2);
+    pl._fade = 0;
     scene.add(pl);
     nightLights.push(pl);
 }
@@ -427,8 +435,13 @@ scene.add(skier);
 
 const chunks = createTerrain(scene);
 
-for (let i = SAFE_CHUNKS; i < chunks.length; i++) {
-    populateChunk(chunks[i], CHUNK_LENGTH, CHUNK_WIDTH, 0, false);
+for (let i = 0; i < chunks.length; i++) {
+    const biomeName = (i < SAFE_CHUNKS) ? BIOME_BASE : getBiomeForNextChunk(SPEED_INITIAL);
+    if (i < SAFE_CHUNKS) {
+        chunks[i].userData.biome = BIOME_BASE;
+    } else {
+        populateChunk(chunks[i], CHUNK_LENGTH, CHUNK_WIDTH, 0, false, biomeName);
+    }
 }
 
 // Background mountain ring; the main loop slides it along Z each frame
@@ -685,6 +698,88 @@ for (let i = 0; i < MENU_SNOWFLAKE_COUNT; i++) {
     menuOverlay.appendChild(flake);
 }
 
+const settingsCog = document.createElement('div');
+settingsCog.style.cssText =
+    'position:absolute; top:24px; right:24px; width:48px; height:48px;' +
+    'display:flex; align-items:center; justify-content:center;' +
+    'font-size:30px; color:#a0b8d0; cursor:pointer; user-select:none;' +
+    'border-radius:50%; background:rgba(0,0,0,0.25);' +
+    'transition:transform 0.4s ease, color 0.2s, background 0.2s;';
+settingsCog.textContent = '⚙';
+settingsCog.addEventListener('mouseenter', () => {
+    settingsCog.style.color = '#e4edf5';
+    settingsCog.style.transform = 'rotate(60deg)';
+    settingsCog.style.background = 'rgba(0,0,0,0.4)';
+});
+settingsCog.addEventListener('mouseleave', () => {
+    settingsCog.style.color = '#a0b8d0';
+    settingsCog.style.transform = 'rotate(0deg)';
+    settingsCog.style.background = 'rgba(0,0,0,0.25)';
+});
+menuOverlay.appendChild(settingsCog);
+
+const settingsPanel = document.createElement('div');
+settingsPanel.style.cssText =
+    'position:absolute; top:84px; right:24px; width:280px;' +
+    'background:rgba(15,22,40,0.92);' +
+    'border:1px solid rgba(160,184,208,0.25); border-radius:10px;' +
+    'padding:18px 20px; color:#c0d0e8; font-family:sans-serif;' +
+    'box-shadow:0 4px 24px rgba(0,0,0,0.55);' +
+    'display:none; opacity:0; transition:opacity 0.25s;';
+settingsPanel.innerHTML = `
+    <div style="font-size:11px; opacity:0.55; letter-spacing:2px; text-transform:uppercase; margin-bottom:6px;">Start of run</div>
+    <div id="time-label" style="font-size:20px; font-weight:bold; color:#e4edf5; margin-bottom:14px; letter-spacing:1px;">Morning</div>
+    <input id="time-slider" type="range" min="0" max="1000" value="120" style="width:100%; cursor:pointer; accent-color:#a0b8d0;">
+    <div style="display:flex; justify-content:space-between; font-size:10px; opacity:0.5; margin-top:4px; letter-spacing:1px;">
+        <span>00:00</span><span>12:00</span><span>24:00</span>
+    </div>
+`;
+menuOverlay.appendChild(settingsPanel);
+
+function timeLabelFor(t) {
+    if (t < 0.06) return 'Midnight';
+    if (t < 0.10) return 'Pre-dawn';
+    if (t < 0.16) return 'Dawn';
+    if (t < 0.38) return 'Morning';
+    if (t < 0.52) return 'Midday';
+    if (t < 0.62) return 'Afternoon';
+    if (t < 0.68) return 'Sunset';
+    if (t < 0.76) return 'Dusk';
+    if (t < 0.95) return 'Night';
+    return 'Late night';
+}
+
+const timeSlider = settingsPanel.querySelector('#time-slider');
+const timeLabel  = settingsPanel.querySelector('#time-label');
+timeSlider.value = Math.round(startCycleOffset * 1000);
+timeLabel.textContent = timeLabelFor(startCycleOffset);
+timeSlider.addEventListener('input', () => {
+    const t = parseInt(timeSlider.value, 10) / 1000;
+    startCycleOffset = t;
+    timeLabel.textContent = timeLabelFor(t);
+});
+
+settingsCog.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const opening = settingsPanel.style.display === 'none';
+    if (opening) {
+        settingsPanel.style.display = 'block';
+        requestAnimationFrame(() => { settingsPanel.style.opacity = '1'; });
+    } else {
+        settingsPanel.style.opacity = '0';
+        setTimeout(() => { settingsPanel.style.display = 'none'; }, 250);
+    }
+});
+
+document.addEventListener('click', (e) => {
+    if (settingsPanel.style.display === 'block'
+        && !settingsPanel.contains(e.target)
+        && !settingsCog.contains(e.target)) {
+        settingsPanel.style.opacity = '0';
+        setTimeout(() => { settingsPanel.style.display = 'none'; }, 250);
+    }
+});
+
 document.body.appendChild(menuOverlay);
 
 
@@ -722,8 +817,7 @@ window.addEventListener('resize', () => {
 
 // Position in the day/night cycle, in [0, 1)
 function getCycleT() {
-    // +0.12 starts the run in the morning instead of the middle of the night
-    return ((elapsed / CYCLE_DURATION) + 0.12) % 1.0;
+    return ((elapsed / CYCLE_DURATION) + startCycleOffset) % 1.0;
 }
 
 // Night-eligible window starts at sunset so lit obstacles are already on the
@@ -735,7 +829,17 @@ function isNightTime() {
 
 function onChunkRecycle(chunk) {
     clearChunk(chunk);
-    populateChunk(chunk, CHUNK_LENGTH, CHUNK_WIDTH, score, isNightTime());
+    const biomeName = getBiomeForNextChunk(gameSpeed);
+    populateChunk(chunk, CHUNK_LENGTH, CHUNK_WIDTH, score, isNightTime(), biomeName);
+}
+
+function getCurrentLateralLimit() {
+    for (const c of chunks) {
+        if (c.position.z > -CHUNK_LENGTH / 2 && c.position.z <= CHUNK_LENGTH / 2) {
+            return getBiome(c.userData.biome || BIOME_BASE).lateralLimit;
+        }
+    }
+    return LATERAL_LIMIT_DEFAULT;
 }
 
 function showGameOver() {
@@ -869,11 +973,15 @@ function restartGame() {
     boostHoldTime = 0;
     avalancheGap = GAP_DEFAULT;
 
+    resetBiomeProgression();
     for (let i = 0; i < chunks.length; i++) {
         clearChunk(chunks[i]);
         chunks[i].position.set(0, 0, i * CHUNK_LENGTH);
-        if (i >= SAFE_CHUNKS) {
-            populateChunk(chunks[i], CHUNK_LENGTH, CHUNK_WIDTH, score, isNightTime());
+        if (i < SAFE_CHUNKS) {
+            chunks[i].userData.biome = BIOME_BASE;
+        } else {
+            const biomeName = getBiomeForNextChunk(SPEED_INITIAL);
+            populateChunk(chunks[i], CHUNK_LENGTH, CHUNK_WIDTH, score, isNightTime(), biomeName);
         }
     }
 
@@ -898,6 +1006,7 @@ function animate(now) {
     // -- Game update (only while playing) --
     if (gameState === 'playing') {
         elapsed  += delta;
+        currentLateralLimit = getCurrentLateralLimit();
 
         // Snowplow (S) overrides tuck (W), so S held collapses boostTarget to 0
         const boostTarget = (keys.boost && !keys.brake) ? 1.0 : 0.0;
@@ -937,7 +1046,7 @@ function animate(now) {
 
         updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
 
-        // No hard clamp: |x| > LATERAL_LIMIT triggers the boundary fall.
+        // No hard clamp: |x| > currentLateralLimit triggers the boundary fall.
         // Tucking shrinks lateral speed, so A/D dodging gets harder while W is held
         const lateralSpeed = LATERAL_SPEED * (1 - boostAmount * LATERAL_W_PENALTY);
         if (keys.left)  skier.position.x += lateralSpeed * delta;
@@ -955,7 +1064,7 @@ function animate(now) {
         applySkierSnowplowPose(brakeAmount);
 
         // Death checks in priority order: edge slip > obstacle > avalanche
-        if (Math.abs(skier.position.x) > LATERAL_LIMIT) {
+        if (Math.abs(skier.position.x) > currentLateralLimit) {
             beginEdgeFall();
         }
         else {
@@ -1072,6 +1181,8 @@ function animate(now) {
     lanternMat.emissiveIntensity      = nightFactor * 1.5;
     lamppostBulbMat.emissiveIntensity = nightFactor * 2.5;
 
+    updateFireflies(chunks, now * 0.001, nightFactor);
+
     if (nightFactor > 0) {
         // Lampposts sit higher and shine stronger than fence lanterns
         const litPositions = [];
@@ -1083,7 +1194,7 @@ function animate(now) {
                     const wz = chunk.position.z + ob.localZ;
                     const dx = skier.position.x - wx;
                     const dz = skier.position.z - wz;
-                    litPositions.push({ x: wx, z: wz, y: 1.1, intensity: 4.0, dist: dx * dx + dz * dz });
+                    litPositions.push({ x: wx, z: wz, y: 1.1, intensity: 4.0, color: 0xffaa44, dist: dx * dx + dz * dz });
                 }
                 if (ob.mesh.userData.isLamppost) {
                     const offsetX = ob.mesh.userData.lampOffsetX || 0;
@@ -1091,28 +1202,33 @@ function animate(now) {
                     const wz = chunk.position.z + ob.localZ;
                     const dx = skier.position.x - wx;
                     const dz = skier.position.z - wz;
-                    litPositions.push({ x: wx, z: wz, y: 4.2, intensity: 6.0, dist: dx * dx + dz * dz });
+                    litPositions.push({ x: wx, z: wz, y: 4.2, intensity: 6.0, color: 0xffaa44, dist: dx * dx + dz * dz });
                 }
+            }
+            const ffl = chunk.userData.fireflyLightLocal;
+            if (ffl) {
+                const wx = chunk.position.x + ffl.x;
+                const wz = chunk.position.z + ffl.z;
+                const dx = skier.position.x - wx;
+                const dz = skier.position.z - wz;
+                litPositions.push({ x: wx, z: wz, y: ffl.y, intensity: 3.5, color: 0xffd060, dist: dx * dx + dz * dz });
             }
         }
 
-        // Sort by distance to skier, closest first
         litPositions.sort((a, b) => a.dist - b.dist);
 
-        // Assign pool lights to the nearest lit obstacles, easing in/out so
-        // they do not pop when an obstacle enters or leaves the closest-N list
         for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
             const pl = nightLights[i];
             if (i < litPositions.length) {
                 const lp = litPositions[i];
                 pl.position.set(lp.x, lp.y, lp.z);
+                pl.color.setHex(lp.color);
 
                 const target = nightFactor * lp.intensity;
-                pl._fade = (pl._fade ?? 0) + (target - (pl._fade ?? 0)) * (1 - Math.exp(-3 * delta));
+                pl._fade += (target - pl._fade) * (1 - Math.exp(-3 * delta));
                 pl.intensity = pl._fade;
             } else {
-                // Fade out unused lights
-                pl._fade = (pl._fade ?? 0) * Math.exp(-3 * delta);
+                pl._fade *= Math.exp(-3 * delta);
                 pl.intensity = pl._fade;
             }
         }

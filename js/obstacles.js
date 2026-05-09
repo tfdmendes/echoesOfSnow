@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createCircleCollider, createOrientedBoxCollider } from './collision.js';
+import { getBiome, BIOME_BASE, BIOME_FOREST } from './biomes.js';
 
-const MIN_SPACING = 3.5;
 const EDGE_MARGIN = 2.0;
 
 const BASE_MIN = 3;
@@ -9,18 +9,182 @@ const BASE_MAX = 6;
 const HARD_MIN = 6;
 const HARD_MAX = 12;
 
-// Shared geometries
-const TRUNK_GEO = new THREE.CylinderGeometry(0.12, 0.16, 1.4, 8);
-const CANOPY_BOT = new THREE.ConeGeometry(1.0, 2.0, 8);
-const CANOPY_MID = new THREE.ConeGeometry(0.75, 1.5, 8);
-const CANOPY_TOP = new THREE.ConeGeometry(0.5, 1.1, 8);
+const PINE_STD_TRUNK = new THREE.CylinderGeometry(0.20, 0.27, 3.4, 8);
+const PINE_STD_C1 = new THREE.ConeGeometry(1.30, 2.6, 8);
+const PINE_STD_C2 = new THREE.ConeGeometry(1.00, 2.0, 8);
+const PINE_STD_C3 = new THREE.ConeGeometry(0.65, 1.4, 8);
+
+const PINE_ALP_TRUNK = new THREE.CylinderGeometry(0.18, 0.24, 5.0, 8);
+const PINE_ALP_C1 = new THREE.ConeGeometry(1.05, 2.0, 8);
+const PINE_ALP_C2 = new THREE.ConeGeometry(0.80, 1.7, 8);
+const PINE_ALP_C3 = new THREE.ConeGeometry(0.58, 1.4, 8);
+const PINE_ALP_C4 = new THREE.ConeGeometry(0.36, 1.1, 8);
+
+const BUSHY_TRUNK = new THREE.CylinderGeometry(0.32, 0.42, 3.2, 10);
+const BUSHY_BLOB_LG = new THREE.SphereGeometry(1.20, 12, 9);
+const BUSHY_BLOB_SM = new THREE.SphereGeometry(0.78, 10, 7);
+
+const FIREFLY_GEO = new THREE.SphereGeometry(0.08, 8, 6);
+const fireflyMat = new THREE.MeshBasicMaterial({
+    color: 0xffe070,
+    transparent: true,
+    opacity: 0,
+    fog: false,
+});
+
+function makeFireflyGlowTexture() {
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    const center = size / 2;
+    const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
+    gradient.addColorStop(0.0, 'rgba(255, 250, 220, 1.0)');
+    gradient.addColorStop(0.3, 'rgba(255, 230, 130, 0.50)');
+    gradient.addColorStop(1.0, 'rgba(255, 210, 80, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    return new THREE.CanvasTexture(canvas);
+}
+
+const FIREFLY_GLOW_TEXTURE = makeFireflyGlowTexture();
+const fireflyHaloMat = new THREE.SpriteMaterial({
+    map: FIREFLY_GLOW_TEXTURE,
+    color: 0xffe070,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+    opacity: 0,
+});
+
 const ROCK_SM = new THREE.DodecahedronGeometry(0.5, 0);
 const ROCK_LG = new THREE.DodecahedronGeometry(0.9, 1);
 
 
-const trunkMat = new THREE.MeshPhongMaterial({ color: 0x4a3728 });
-const canopyMat = new THREE.MeshPhongMaterial({ color: 0x2d5a27 });
-const canopyDarkMat = new THREE.MeshPhongMaterial({ color: 0x1e4a1a });
+const textureLoader = new THREE.TextureLoader();
+
+function loadTexture(path, onLoaded) {
+    textureLoader.load(
+        path,
+        (tex) => {
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.anisotropy = 8;
+            onLoaded(tex);
+        },
+        undefined,
+        () => console.warn('Texture missing:', path)
+    );
+}
+
+function tiledClone(tex, repeatU, repeatV) {
+    const c = tex.clone();
+    c.wrapS = THREE.RepeatWrapping;
+    c.wrapT = THREE.RepeatWrapping;
+    c.repeat.set(repeatU, repeatV);
+    c.anisotropy = 8;
+    c.needsUpdate = true;
+    return c;
+}
+
+const trunkMatStd   = new THREE.MeshPhongMaterial({ color: 0x8a6a47, shininess: 5 });
+const trunkMatAlp   = new THREE.MeshPhongMaterial({ color: 0x7a6750, shininess: 4 });
+const trunkMatWide  = new THREE.MeshPhongMaterial({ color: 0xa3835a, shininess: 6 });
+
+loadTexture('assets/textures/bark/bark_brown_02_diff_4k.jpg', (tex) => {
+    trunkMatStd.map  = tiledClone(tex, 1, 2);
+    trunkMatStd.color.setHex(0xffffff);
+    trunkMatStd.needsUpdate = true;
+
+    trunkMatAlp.map  = tiledClone(tex, 1, 4);
+    trunkMatAlp.color.setHex(0xc8c0b0);
+    trunkMatAlp.needsUpdate = true;
+
+    trunkMatWide.map = tiledClone(tex, 2, 1);
+    trunkMatWide.color.setHex(0xe8d0a8);
+    trunkMatWide.needsUpdate = true;
+});
+
+loadTexture('assets/textures/bark/bark_brown_02_nor_gl_4k.jpg', (tex) => {
+    trunkMatStd.normalMap  = tiledClone(tex, 1, 2);
+    trunkMatStd.normalScale.set(0.8, 0.8);
+    trunkMatStd.needsUpdate = true;
+
+    trunkMatAlp.normalMap  = tiledClone(tex, 1, 4);
+    trunkMatAlp.normalScale.set(0.6, 0.6);
+    trunkMatAlp.needsUpdate = true;
+
+    trunkMatWide.normalMap = tiledClone(tex, 2, 1);
+    trunkMatWide.normalScale.set(1.0, 1.0);
+    trunkMatWide.needsUpdate = true;
+});
+
+function makeCanopyTexture() {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#888888';
+    ctx.fillRect(0, 0, size, size);
+
+    function drawSeamless(x, y, r, fill) {
+        ctx.fillStyle = fill;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                ctx.beginPath();
+                ctx.arc(x + dx * size, y + dy * size, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    for (let i = 0; i < 70; i++) {
+        const r = 6 + Math.random() * 18;
+        const v = 150 + Math.random() * 70;
+        drawSeamless(Math.random() * size, Math.random() * size, r,
+            `rgba(${v}, ${v}, ${v}, 0.55)`);
+    }
+
+    for (let i = 0; i < 35; i++) {
+        const r = 3 + Math.random() * 7;
+        const v = 30 + Math.random() * 40;
+        drawSeamless(Math.random() * size, Math.random() * size, r,
+            `rgba(${v}, ${v}, ${v}, 0.45)`);
+    }
+
+    for (let i = 0; i < 220; i++) {
+        const r = 0.6 + Math.random() * 1.8;
+        drawSeamless(Math.random() * size, Math.random() * size, r,
+            `rgba(255, 255, 255, ${0.3 + Math.random() * 0.4})`);
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 2);
+    tex.anisotropy = 4;
+    return tex;
+}
+
+const CANOPY_TEXTURE = makeCanopyTexture();
+
+const CANOPY_VARIANT_COUNT = 6;
+const canopyVariants = [];
+for (let i = 0; i < CANOPY_VARIANT_COUNT; i++) {
+    const hue = 0.30 + (Math.random() - 0.5) * 0.05;
+    const sat = 0.45 + Math.random() * 0.20;
+    const light = 0.30 + Math.random() * 0.15;
+    canopyVariants.push(new THREE.MeshPhongMaterial({
+        color: new THREE.Color().setHSL(hue, sat, light),
+        map: CANOPY_TEXTURE,
+    }));
+}
 const rockMat = new THREE.MeshPhongMaterial({ color: 0x6b6b6b, flatShading: true });
 const rockDarkMat = new THREE.MeshPhongMaterial({ color: 0x505050, flatShading: true });
 
@@ -86,38 +250,201 @@ const lamppostBulbMat = new THREE.MeshPhongMaterial({
 
 
 
-// Pine tree: 3 layered cones + trunk
-function createTree() {
+function pickCanopyMat() {
+    return canopyVariants[Math.floor(Math.random() * canopyVariants.length)];
+}
+
+function jitterCanopy(mesh, amount = 0.06, baseWidth = 1.0) {
+    mesh.rotation.y = (Math.random() - 0.5) * amount * 4;
+    const sj = baseWidth * (1 + (Math.random() - 0.5) * amount);
+    mesh.scale.x = mesh.scale.z = sj;
+}
+
+function createPineStandard() {
     const group = new THREE.Group();
 
-    const trunk = new THREE.Mesh(TRUNK_GEO, trunkMat);
-    trunk.position.y = 0.7;
+    const trunkW = 0.80 + Math.random() * 0.55;
+    const canopyW = 0.80 + Math.random() * 0.50;
+
+    const trunk = new THREE.Mesh(PINE_STD_TRUNK, trunkMatStd);
+    trunk.position.y = 1.7;
+    trunk.scale.x = trunk.scale.z = trunkW;
     trunk.castShadow = true;
 
-    // Random shade so the forest is not uniform
-    const mat = Math.random() > 0.5 ? canopyMat : canopyDarkMat;
-
-    const c1 = new THREE.Mesh(CANOPY_BOT, mat);
-    c1.position.y = 1.8;
-    c1.castShadow = true;
-
-    const c2 = new THREE.Mesh(CANOPY_MID, mat);
-    c2.position.y = 2.7;
-    c2.castShadow = true;
-
-    const c3 = new THREE.Mesh(CANOPY_TOP, mat);
-    c3.position.y = 3.4;
-    c3.castShadow = true;
+    const mat = pickCanopyMat();
+    const c1 = new THREE.Mesh(PINE_STD_C1, mat); c1.position.y = 3.80; c1.castShadow = true;
+    const c2 = new THREE.Mesh(PINE_STD_C2, mat); c2.position.y = 5.00; c2.castShadow = true;
+    const c3 = new THREE.Mesh(PINE_STD_C3, mat); c3.position.y = 6.10; c3.castShadow = true;
+    jitterCanopy(c1, 0.06, canopyW);
+    jitterCanopy(c2, 0.06, canopyW);
+    jitterCanopy(c3, 0.06, canopyW);
 
     group.add(trunk, c1, c2, c3);
 
-    // Non-uniform scale: sY stretches height independently of width
-    const s = 1.0 + Math.random() * 0.6;
-    const sY = 1.4 + Math.random() * 0.8;
-    group.scale.set(s, sY, s);
-    group.userData.collider = createCircleCollider(0.3 * s);
+    const s = 1.1 + Math.random() * 0.6;
+    group.scale.set(s, s * (1.05 + Math.random() * 0.35), s);
+    group.rotation.y = Math.random() * Math.PI * 2;
 
+    group.userData.collider = createCircleCollider(0.40 * s * trunkW);
     return group;
+}
+
+function createPineAlpine() {
+    const group = new THREE.Group();
+
+    const trunkW = 0.85 + Math.random() * 0.45;
+    const canopyW = 0.85 + Math.random() * 0.40;
+
+    const trunk = new THREE.Mesh(PINE_ALP_TRUNK, trunkMatAlp);
+    trunk.position.y = 2.5;
+    trunk.scale.x = trunk.scale.z = trunkW;
+    trunk.castShadow = true;
+
+    const mat = pickCanopyMat();
+    const layout = [
+        { geo: PINE_ALP_C1, y: 5.40 },
+        { geo: PINE_ALP_C2, y: 6.25 },
+        { geo: PINE_ALP_C3, y: 7.10 },
+        { geo: PINE_ALP_C4, y: 7.75 },
+    ];
+    const cones = [];
+    for (const l of layout) {
+        const m = new THREE.Mesh(l.geo, mat);
+        m.position.y = l.y;
+        m.castShadow = true;
+        jitterCanopy(m, 0.04, canopyW);
+        cones.push(m);
+    }
+
+    group.add(trunk, ...cones);
+
+    const s = 1.1 + Math.random() * 0.5;
+    const sY = s * (1.05 + Math.random() * 0.40);
+    group.scale.set(s, sY, s);
+    group.rotation.y = Math.random() * Math.PI * 2;
+
+    group.userData.collider = createCircleCollider(0.34 * s * trunkW);
+    return group;
+}
+
+function createClusterBushy() {
+    const group = new THREE.Group();
+
+    const trunkW = 0.85 + Math.random() * 0.50;
+    const canopyW = 0.85 + Math.random() * 0.45;
+
+    const trunk = new THREE.Mesh(BUSHY_TRUNK, trunkMatWide);
+    trunk.position.y = 1.6;
+    trunk.scale.x = trunk.scale.z = trunkW;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    const mat = pickCanopyMat();
+    const blobLayout = [
+        { geo: BUSHY_BLOB_LG, x:  0.00, y: 3.60, z:  0.00 },
+        { geo: BUSHY_BLOB_LG, x: -0.70, y: 3.85, z:  0.25 },
+        { geo: BUSHY_BLOB_LG, x:  0.65, y: 3.90, z: -0.20 },
+        { geo: BUSHY_BLOB_SM, x:  0.10, y: 4.45, z:  0.35 },
+        { geo: BUSHY_BLOB_SM, x: -0.35, y: 4.35, z: -0.45 },
+    ];
+    for (const b of blobLayout) {
+        const blob = new THREE.Mesh(b.geo, mat);
+        blob.position.set(
+            b.x + (Math.random() - 0.5) * 0.18,
+            b.y + (Math.random() - 0.5) * 0.10,
+            b.z + (Math.random() - 0.5) * 0.18
+        );
+        const sj = canopyW * (0.85 + Math.random() * 0.3);
+        blob.scale.set(sj, sj * (0.85 + Math.random() * 0.2), sj);
+        blob.rotation.y = Math.random() * Math.PI * 2;
+        blob.castShadow = true;
+        group.add(blob);
+    }
+
+    const s = 1.1 + Math.random() * 0.4;
+    group.scale.set(s, s * (0.95 + Math.random() * 0.25), s);
+    group.rotation.y = Math.random() * Math.PI * 2;
+
+    group.userData.collider = createCircleCollider(0.72 * s * trunkW);
+    return group;
+}
+
+function createTree() {
+    const r = Math.random();
+    if (r < 0.50) return createPineStandard();
+    if (r < 0.85) return createPineAlpine();
+    return createClusterBushy();
+}
+
+function spawnFireflies(chunkGroup, chunkLength, chunkWidth) {
+    const count = 7 + Math.floor(Math.random() * 7);
+    const halfW = chunkWidth / 2 - 1;
+    const halfL = chunkLength / 2 - 1;
+
+    const fireflies = [];
+    let cx = 0, cy = 0, cz = 0;
+
+    for (let i = 0; i < count; i++) {
+        const ff = new THREE.Mesh(FIREFLY_GEO, fireflyMat);
+        const px = (Math.random() * 2 - 1) * halfW;
+        const py = 1.5 + Math.random() * 2.8;
+        const pz = (Math.random() * 2 - 1) * halfL;
+        ff.position.set(px, py, pz);
+
+        const halo = new THREE.Sprite(fireflyHaloMat);
+        halo.scale.set(2.2, 2.2, 1);
+        ff.add(halo);
+
+        ff.userData.basePos = ff.position.clone();
+        ff.userData.bobAmp = 0.25 + Math.random() * 0.45;
+        ff.userData.bobFreq = 0.35 + Math.random() * 0.55;
+        ff.userData.bobPhase = Math.random() * Math.PI * 2;
+        ff.userData.driftAmp = 0.30 + Math.random() * 0.50;
+        ff.userData.driftFreq = 0.20 + Math.random() * 0.35;
+        ff.userData.driftPhase = Math.random() * Math.PI * 2;
+        ff.userData.twinkleFreq = 1.2 + Math.random() * 2.5;
+        ff.userData.twinklePhase = Math.random() * Math.PI * 2;
+        ff.userData.baseScale = 0.7 + Math.random() * 0.8;
+
+        chunkGroup.add(ff);
+        fireflies.push(ff);
+
+        cx += px; cy += py; cz += pz;
+    }
+
+    chunkGroup.userData.fireflies = fireflies;
+    chunkGroup.userData.fireflyLightLocal = {
+        x: cx / count,
+        y: cy / count,
+        z: cz / count,
+    };
+}
+
+export function updateFireflies(chunks, time, nightFactor) {
+    fireflyMat.opacity = nightFactor;
+    fireflyHaloMat.opacity = nightFactor * 0.85;
+    if (nightFactor <= 0.01) return;
+
+    for (const chunk of chunks) {
+        const fireflies = chunk.userData.fireflies;
+        if (!fireflies) continue;
+
+        for (const ff of fireflies) {
+            const u = ff.userData;
+            const bob = Math.sin(time * u.bobFreq + u.bobPhase) * u.bobAmp;
+            const driftX = Math.sin(time * u.driftFreq + u.driftPhase) * u.driftAmp;
+            const driftZ = Math.cos(time * u.driftFreq + u.driftPhase * 0.7) * u.driftAmp;
+            ff.position.set(
+                u.basePos.x + driftX,
+                u.basePos.y + bob,
+                u.basePos.z + driftZ
+            );
+
+            const twinkle = 0.5 + 0.5 * Math.sin(time * u.twinkleFreq + u.twinklePhase);
+            const sj = u.baseScale * (0.4 + twinkle * 0.6);
+            ff.scale.setScalar(sj);
+        }
+    }
 }
 
 
@@ -395,40 +722,49 @@ function createLamppost(spawnX) {
 
 
 
-// Weighted random pick. Light-bearing obstacles are biased much higher at night
-function pickObstacle(isNight, spawnX) {
-    const r = Math.random();
-    if (isNight) {
-        if (r < 0.18) return createTree();
-        if (r < 0.26) return createRock();
-        if (r < 0.34) return createSnowman();
-        if (r < 0.42) return createFallenLog();
-        if (r < 0.50) return createStump();
-        if (r < 0.75) return createLitFence();
-        return createLamppost(spawnX);
+const FACTORIES = {
+    tree:      (spawnX) => createTree(),
+    rock:      (spawnX) => createRock(),
+    snowman:   (spawnX) => createSnowman(),
+    fallenLog: (spawnX) => createFallenLog(),
+    stump:     (spawnX) => createStump(),
+    fence:     (spawnX) => createFence(),
+    litFence:  (spawnX) => createLitFence(),
+    lamppost:  (spawnX) => createLamppost(spawnX),
+};
+
+function pickObstacle(biome, isNight, spawnX) {
+    const weights = isNight ? biome.nightWeights : biome.weights;
+
+    let total = 0;
+    for (const k in weights) total += weights[k];
+    if (total <= 0) return createTree();
+
+    let r = Math.random() * total;
+    for (const k in weights) {
+        r -= weights[k];
+        if (r <= 0) return FACTORIES[k](spawnX);
     }
-    if (r < 0.28) return createTree();
-    if (r < 0.41) return createRock();
-    if (r < 0.54) return createSnowman();
-    if (r < 0.67) return createFallenLog();
-    if (r < 0.75) return createStump();
-    if (r < 0.85) return createFence();
-    if (r < 0.93) return createLitFence();
-    return createLamppost(spawnX);
+    return createTree();
 }
 
 
 
-export function populateChunk(chunkGroup, chunkLength, chunkWidth, score, isNight) {
-    // Difficulty ramp by score, capped at HARD_MIN/HARD_MAX
+export function populateChunk(chunkGroup, chunkLength, chunkWidth, score, isNight, biomeName = BIOME_BASE) {
+    const biome = getBiome(biomeName);
+    chunkGroup.userData.biome = biomeName;
+
     const s = score || 0;
-    const minCount = Math.min(HARD_MIN, BASE_MIN + Math.floor(s / 400));
-    const maxCount = Math.min(HARD_MAX, BASE_MAX + Math.floor(s / 300));
+    const baseMin = BASE_MIN + Math.floor(s / 400);
+    const baseMax = BASE_MAX + Math.floor(s / 300);
+    const minCount = Math.min(HARD_MIN, Math.round(baseMin * biome.densityMultiplier));
+    const maxCount = Math.min(HARD_MAX * 2, Math.round(baseMax * biome.densityMultiplier));
 
     const obstacles = [];
     const count = minCount + Math.floor(Math.random() * (maxCount - minCount + 1));
     const halfW = chunkWidth / 2 - EDGE_MARGIN;
     const halfL = chunkLength / 2 - EDGE_MARGIN;
+    const minSpacing = biome.minSpacing;
 
     for (let i = 0; i < count; i++) {
         const lx = (Math.random() * 2 - 1) * halfW;
@@ -438,14 +774,14 @@ export function populateChunk(chunkGroup, chunkLength, chunkWidth, score, isNigh
         for (const ob of obstacles) {
             const dx = lx - ob.localX;
             const dz = lz - ob.localZ;
-            if (Math.sqrt(dx * dx + dz * dz) < MIN_SPACING) {
+            if (Math.sqrt(dx * dx + dz * dz) < minSpacing) {
                 tooClose = true;
                 break;
             }
         }
         if (tooClose) continue;
 
-        const mesh = pickObstacle(isNight, lx);
+        const mesh = pickObstacle(biome, isNight, lx);
         mesh.position.set(lx, 0, lz);
         chunkGroup.add(mesh);
 
@@ -458,6 +794,10 @@ export function populateChunk(chunkGroup, chunkLength, chunkWidth, score, isNigh
     }
 
     chunkGroup.userData.obstacles = obstacles;
+
+    if (biomeName === BIOME_FOREST) {
+        spawnFireflies(chunkGroup, chunkLength, chunkWidth);
+    }
 }
 
 
@@ -468,6 +808,13 @@ export function clearChunk(chunkGroup) {
         chunkGroup.remove(ob.mesh);
     }
     chunkGroup.userData.obstacles = [];
+
+    const fireflies = chunkGroup.userData.fireflies || [];
+    for (const ff of fireflies) {
+        chunkGroup.remove(ff);
+    }
+    chunkGroup.userData.fireflies = [];
+    chunkGroup.userData.fireflyLightLocal = null;
 }
 
 

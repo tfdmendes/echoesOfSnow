@@ -314,6 +314,7 @@ const BASE_KNEE_FLEX = 0.58;
 const BASE_ANKLE_FLEX = -0.12;
 const BASE_ARM_X = -0.36;
 const BASE_ARM_Z = 0.18;
+const BASE_FOREARM_X = -0.48;
 
 const STICK_SWEEP_SPEED = 1.8;
 const STICK_ARM_X = [-0.45, 0.35];
