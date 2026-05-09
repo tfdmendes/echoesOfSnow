@@ -8,9 +8,9 @@ const CLOUD_DEPTH = 10.5;
 const CLOUD_HEIGHT = 7.35;
 
 const VEIL_COUNT = 5;
-const BILLBOARD_COUNT = 190;
-const FINE_PARTICLES = 2100;
-const HEAVY_PARTICLES = 620;
+const BILLBOARD_COUNT = 80;
+const FINE_PARTICLES = 520;
+const HEAVY_PARTICLES = 180;
 
 const tmpColor = new THREE.Color();
 

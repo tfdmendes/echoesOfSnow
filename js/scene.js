@@ -169,8 +169,8 @@ camera.lookAt(0, 1, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = false;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 document.body.appendChild(renderer.domElement);
 
 
@@ -182,11 +182,11 @@ const ambientLight = new THREE.AmbientLight(0x8899bb, 0.6);
 scene.add(ambientLight);
 
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
-sunLight.castShadow = true;
+sunLight.castShadow = false;
 
-// High-res shadow map to compensate for the large frustum
-sunLight.shadow.mapSize.width  = 8192;
-sunLight.shadow.mapSize.height = 8192;
+// Shadow map kept low in case shadows are re-enabled later.
+sunLight.shadow.mapSize.width  = 2048;
+sunLight.shadow.mapSize.height = 2048;
 
 
 sunLight.shadow.camera.near   = -200;
@@ -205,7 +205,7 @@ scene.add(sunLight);
 
 // PointLight pool reassigned to the closest lit obstacles each frame so the
 // scene avoids creating a light per obstacle (which would tank framerate)
-const NIGHT_LIGHT_COUNT = 20;
+const NIGHT_LIGHT_COUNT = 4;
 const nightLights = [];
 for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
     const pl = new THREE.PointLight(0xffaa44, 0, 28, 1.2);
