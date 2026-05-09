@@ -95,7 +95,7 @@ const trunkMatStd   = new THREE.MeshPhongMaterial({ color: 0x8a6a47, shininess: 
 const trunkMatAlp   = new THREE.MeshPhongMaterial({ color: 0x7a6750, shininess: 4 });
 const trunkMatWide  = new THREE.MeshPhongMaterial({ color: 0xa3835a, shininess: 6 });
 
-loadTexture('assets/textures/bark/bark_brown_02_diff_4k.jpg', (tex) => {
+loadTexture('assets/textures/bark/bark_brown_02_diff_1k.jpg', (tex) => {
     trunkMatStd.map  = tiledClone(tex, 1, 2);
     trunkMatStd.color.setHex(0xffffff);
     trunkMatStd.needsUpdate = true;
@@ -109,7 +109,7 @@ loadTexture('assets/textures/bark/bark_brown_02_diff_4k.jpg', (tex) => {
     trunkMatWide.needsUpdate = true;
 });
 
-loadTexture('assets/textures/bark/bark_brown_02_nor_gl_4k.jpg', (tex) => {
+loadTexture('assets/textures/bark/bark_brown_02_nor_gl_1k.jpg', (tex) => {
     trunkMatStd.normalMap  = tiledClone(tex, 1, 2);
     trunkMatStd.normalScale.set(0.8, 0.8);
     trunkMatStd.needsUpdate = true;
