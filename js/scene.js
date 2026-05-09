@@ -89,8 +89,8 @@ const AVALANCHE_FALL_PITCH      = 1.1;
 
 // ---- Speed lines (2D canvas overlay above the WebGL viewport) ----
 const SPEED_LINE_COUNT          = 28;
-const SPEED_LINE_THRESHOLD_LO   = SPEED_INITIAL * 1.3;   // no streaks below ~18 m/s
-const SPEED_LINE_THRESHOLD_HI   = SPEED_INITIAL * 3.5;   // full strength at ~49 m/s
+const SPEED_LINE_THRESHOLD_LO   = 80;    // no streaks below 80 m/s
+const SPEED_LINE_THRESHOLD_HI   = 110;   // full strength at 110 m/s
 const SPEED_LINE_MAX_OPACITY    = 0.50;
 const SPEED_LINE_OPACITY_CURVE  = 1.3;      // >1 = slow onset, sharp climb
 const SPEED_LINE_MOTION_GAIN    = 9.0;      // px/s per (m/s) of gameSpeed

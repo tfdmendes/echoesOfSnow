@@ -96,6 +96,8 @@ const trunkMatAlp   = new THREE.MeshPhongMaterial({ color: 0x7a6750, shininess: 
 const trunkMatWide  = new THREE.MeshPhongMaterial({ color: 0xa3835a, shininess: 6 });
 
 loadTexture('assets/textures/bark/bark_brown_02_diff_1k.jpg', (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+
     trunkMatStd.map  = tiledClone(tex, 1, 2);
     trunkMatStd.color.setHex(0xffffff);
     trunkMatStd.needsUpdate = true;

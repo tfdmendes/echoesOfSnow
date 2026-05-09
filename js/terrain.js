@@ -243,10 +243,8 @@ function makeSnowTexture() {
     canvas.height = size;
     const ctx = canvas.getContext('2d');
 
-    // Base colour: dry snow (warm white)
     const base = [252, 254, 255];
 
-    // Coarse grid of random offsets, interpolated for smooth bump variation
     const gridSize = 24;
     const grid = [];
     for (let i = 0; i <= gridSize; i++) {
@@ -256,9 +254,7 @@ function makeSnowTexture() {
         }
     }
 
-
     function smoothNoise(x, y) {
-        // Pixel coords to grid coords
         const gx = (x / size) * gridSize;
         const gy = (y / size) * gridSize;
         const ix = Math.floor(gx);
@@ -266,7 +262,6 @@ function makeSnowTexture() {
         const fx = gx - ix;
         const fy = gy - iy;
 
-        // Bilinear interpolation across the four surrounding grid points
         const a = grid[ix][iy];
         const b = grid[ix + 1][iy];
         const c = grid[ix][iy + 1];
@@ -274,20 +269,14 @@ function makeSnowTexture() {
         return a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
     }
 
-
-
-    // Fill pixel by pixel with slight random noise around the base colour
     const imageData = ctx.createImageData(size, size);
     const data = imageData.data;
 
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
             const i = (y * size + x) * 4;
-
-            // Low-frequency bump plus a subtle high-frequency grain on top
             const noise = smoothNoise(x, y) + (Math.random() - 0.5) * 6;
-
-            data[i] = Math.min(255, Math.max(0, base[0] + noise));
+            data[i]     = Math.min(255, Math.max(0, base[0] + noise));
             data[i + 1] = Math.min(255, Math.max(0, base[1] + noise));
             data[i + 2] = Math.min(255, Math.max(0, base[2] + noise));
             data[i + 3] = 255;
@@ -296,7 +285,6 @@ function makeSnowTexture() {
 
     ctx.putImageData(imageData, 0, 0);
 
-    // Sparkle dots that fake light catching the snow crystals
     ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
     for (let s = 0; s < 350; s++) {
         ctx.beginPath();
@@ -310,3 +298,5 @@ function makeSnowTexture() {
     tex.repeat.set(4, 10);
     return tex;
 }
+
+
