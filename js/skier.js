@@ -299,6 +299,10 @@ function createSkier() {
     registerEquipment(leftPoleMesh, leftPoleGroup, -1, 'pole');
     registerEquipment(rightPoleMesh, rightPoleGroup, 1, 'pole');
 
+    group.traverse(function (node) {
+        if (node.isMesh) node.castShadow = true;
+    });
+
     return group;
 }
 

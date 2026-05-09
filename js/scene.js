@@ -169,8 +169,8 @@ camera.lookAt(0, 1, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = false;
-renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 
@@ -182,11 +182,11 @@ const ambientLight = new THREE.AmbientLight(0x8899bb, 0.6);
 scene.add(ambientLight);
 
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
-sunLight.castShadow = false;
+sunLight.castShadow = true;
 
-// Shadow map kept low in case shadows are re-enabled later.
-sunLight.shadow.mapSize.width  = 2048;
-sunLight.shadow.mapSize.height = 2048;
+// High-res shadow map to compensate for the large frustum
+sunLight.shadow.mapSize.width  = 8192;
+sunLight.shadow.mapSize.height = 8192;
 
 
 sunLight.shadow.camera.near   = -200;
