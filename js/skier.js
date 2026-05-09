@@ -20,6 +20,7 @@ const EQUIPMENT_DRAG = 3.8;
 const WAIST_Y = 0.86;
 const HIP_Y = 0.78;
 const HIP_SPACING = 0.12;
+const SHOULDER_Y = 0.37;
 
 let poseTime = 0;
 const equipmentParts = [];
@@ -75,7 +76,7 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
     const sign = side === 'left' ? -1 : 1;
 
     const shoulder = new THREE.Group();
-    shoulder.position.set(0.24 * sign, 0.25, 0.02);
+    shoulder.position.set(0.24 * sign, SHOULDER_Y, 0.02);
 
     const upperArm = mark(new THREE.Mesh(
         new THREE.CylinderGeometry(0.042, 0.038, 0.26, 8),
@@ -307,6 +308,8 @@ const BASE_BODY_LEAN = 0.20;
 const BASE_HIP_FLEX = -0.30;
 const BASE_KNEE_FLEX = 0.58;
 const BASE_ANKLE_FLEX = -0.12;
+const BASE_ARM_X = -0.36;
+const BASE_ARM_Z = 0.18;
 
 const STICK_SWEEP_SPEED = 1.8;
 const STICK_ARM_X = [-0.45, 0.35];
@@ -314,19 +317,28 @@ const STICK_ARM_Z = [0.12, 0.20];
 const STICK_FOREARM_X = [-0.35, -0.10];
 const STICK_POLE_X = [0.05, 0.80];
 
-export function animateSkier(time) {
+export function animateSkier(time, controls = {}) {
     poseTime = time;
 
-    const cycle = time * 2.2;
+    const boost = clamp01(controls.boost ?? 0);
+    const brake = clamp01(controls.brake ?? 0);
+    const inputTempo = 1 - brake * 0.12;
+    const cycle = time * 2.2 * inputTempo;
     const absorb = Math.sin(cycle * 1.5 + 0.6);
     const glide = Math.sin(cycle);
     const poleFloat = Math.sin(cycle + 1.2);
     const turnLean = skier.rotation.z;
     const turnAmount = clamp01(Math.abs(turnLean) / 0.45);
     const turnSide = Math.sign(turnLean) || 0;
+    const leftInside = turnSide > 0 ? turnAmount : 0;
+    const rightInside = turnSide < 0 ? turnAmount : 0;
+    const leftOutside = turnSide < 0 ? turnAmount : 0;
+    const rightOutside = turnSide > 0 ? turnAmount : 0;
 
-    const compression = 0.035 * absorb;
-    const legCounter = 0.018 * glide;
+    const footMotion = 1 - boost * 0.72 - brake * 0.22;
+    const compression = 0.035 * absorb * footMotion;
+    const legCounter = 0.018 * glide * footMotion;
+    const turnCompression = 0.035 * turnAmount;
 
     const leftHipX = BASE_HIP_FLEX - compression + legCounter;
     const rightHipX = BASE_HIP_FLEX - compression - legCounter;
@@ -335,46 +347,47 @@ export function animateSkier(time) {
     const leftAnkleX = BASE_ANKLE_FLEX - compression * 0.25 - legCounter * 0.2;
     const rightAnkleX = BASE_ANKLE_FLEX - compression * 0.25 + legCounter * 0.2;
 
-    skier.position.y = 0.012 + Math.max(0, absorb) * 0.012;
+    skier.position.y = 0.012 + Math.max(0, absorb) * 0.012 * footMotion;
 
-    upperBodyGroup.position.set(0, WAIST_Y - 0.01 + compression * 0.25, 0.012);
-    upperBodyGroup.rotation.x = BASE_BODY_LEAN + 0.02 * poleFloat;
-    upperBodyGroup.rotation.y = -turnSide * 0.08 * turnAmount;
-    upperBodyGroup.rotation.z = -turnLean * 0.20 + 0.006 * glide;
+    upperBodyGroup.position.set(0, WAIST_Y - 0.01 + compression * 0.25 - turnCompression, 0.012);
+    upperBodyGroup.rotation.x = BASE_BODY_LEAN + 0.02 * poleFloat + boost * 0.03 - brake * 0.04;
+    upperBodyGroup.rotation.y = -turnSide * 0.16 * turnAmount;
+    upperBodyGroup.rotation.z = turnLean * 0.22 + 0.006 * glide;
     headGroup.rotation.x = -0.10 - 0.02 * poleFloat;
-    headGroup.rotation.y = turnSide * 0.06 * turnAmount;
+    headGroup.rotation.y = turnSide * 0.10 * turnAmount;
 
-    leftLegGroup.position.set(-HIP_SPACING, HIP_Y, 0);
-    rightLegGroup.position.set(HIP_SPACING, HIP_Y, 0);
-    leftLegGroup.rotation.set(leftHipX, 0, turnSide * 0.04 * turnAmount);
-    rightLegGroup.rotation.set(rightHipX, 0, turnSide * 0.04 * turnAmount);
-    leftKneeGroup.rotation.set(leftKneeX, 0, 0);
-    rightKneeGroup.rotation.set(rightKneeX, 0, 0);
-    leftAnkleGroup.rotation.set(leftAnkleX, 0, -turnSide * 0.025 * turnAmount);
-    rightAnkleGroup.rotation.set(rightAnkleX, 0, -turnSide * 0.025 * turnAmount);
+    leftLegGroup.position.set(-HIP_SPACING - 0.020 * leftInside, HIP_Y - 0.020 * leftOutside, 0);
+    rightLegGroup.position.set(HIP_SPACING + 0.020 * rightInside, HIP_Y - 0.020 * rightOutside, 0);
+    leftLegGroup.rotation.set(leftHipX - 0.055 * leftInside + 0.035 * leftOutside, 0, turnSide * 0.090 * turnAmount);
+    rightLegGroup.rotation.set(rightHipX - 0.055 * rightInside + 0.035 * rightOutside, 0, turnSide * 0.090 * turnAmount);
+    leftKneeGroup.rotation.set(leftKneeX + 0.150 * leftInside - 0.055 * leftOutside, 0, -turnSide * 0.115 * turnAmount);
+    rightKneeGroup.rotation.set(rightKneeX + 0.150 * rightInside - 0.055 * rightOutside, 0, -turnSide * 0.115 * turnAmount);
+    leftAnkleGroup.rotation.set(leftAnkleX, 0, turnSide * (0.120 * turnAmount - 0.045 * leftInside));
+    rightAnkleGroup.rotation.set(rightAnkleX, 0, turnSide * (0.120 * turnAmount - 0.045 * rightInside));
 
     leftSkiGroup.position.set(0, -0.06, 0.035);
     rightSkiGroup.position.set(0, -0.06, 0.035);
-    leftSkiGroup.rotation.x = -0.20 - glide * 0.05;
-    rightSkiGroup.rotation.x = -0.20 + glide * 0.05;
-    leftSkiGroup.rotation.y = 0.015;
-    rightSkiGroup.rotation.y = -0.015;
-    leftSkiGroup.rotation.z = 0;
-    rightSkiGroup.rotation.z = 0;
+    leftSkiGroup.rotation.x = -0.20 - glide * 0.05 * footMotion;
+    rightSkiGroup.rotation.x = -0.20 + glide * 0.05 * footMotion;
+    leftSkiGroup.rotation.y = 0.015 + turnSide * 0.050 * turnAmount;
+    rightSkiGroup.rotation.y = -0.015 + turnSide * 0.050 * turnAmount;
+    leftSkiGroup.rotation.z = turnSide * 0.220 * turnAmount;
+    rightSkiGroup.rotation.z = turnSide * 0.220 * turnAmount;
 
-    const stickRaw = Math.sin(time * STICK_SWEEP_SPEED);
-    const stickT = (stickRaw + 1.0) * 0.5;
+    const stickRaw = Math.sin(time * STICK_SWEEP_SPEED * (1 - brake * 0.12));
+    const stickAmplitude = 0.5 * (1 - boost * 0.72 - brake * 0.22);
+    const stickT = 0.5 + stickRaw * stickAmplitude;
     const armX = lerp(STICK_ARM_X[0], STICK_ARM_X[1], stickT);
-    const armZ = lerp(STICK_ARM_Z[0], STICK_ARM_Z[1], stickT);
+    const armZ = lerp(STICK_ARM_Z[0], STICK_ARM_Z[1], stickT) + brake * 0.035;
     const forearmX = lerp(STICK_FOREARM_X[0], STICK_FOREARM_X[1], stickT);
     const poleX = lerp(STICK_POLE_X[0], STICK_POLE_X[1], stickT);
 
-    leftArmGroup.rotation.set(armX, 0, -armZ);
-    rightArmGroup.rotation.set(armX, 0, armZ);
-    leftForearmGroup.rotation.set(forearmX, 0, 0);
-    rightForearmGroup.rotation.set(forearmX, 0, 0);
-    leftPoleGroup.rotation.set(poleX, 0, 0);
-    rightPoleGroup.rotation.set(poleX, 0, 0);
+    leftArmGroup.rotation.set(armX - 0.130 * leftInside + 0.060 * leftOutside, 0, -armZ - 0.115 * leftInside);
+    rightArmGroup.rotation.set(armX - 0.130 * rightInside + 0.060 * rightOutside, 0, armZ + 0.115 * rightInside);
+    leftForearmGroup.rotation.set(forearmX - 0.065 * leftInside, 0, 0);
+    rightForearmGroup.rotation.set(forearmX - 0.065 * rightInside, 0, 0);
+    leftPoleGroup.rotation.set(poleX - 0.120 * leftInside, 0, -0.125 * leftInside);
+    rightPoleGroup.rotation.set(poleX - 0.120 * rightInside, 0, 0.125 * rightInside);
 }
 
 export function resetSkierPose() {
@@ -503,10 +516,11 @@ export function applySkierTuckPose(amount) {
 
     leftSkiGroup.rotation.x += 0.09 * t;
     rightSkiGroup.rotation.x += 0.09 * t;
-    leftSkiGroup.rotation.y = lerp(leftSkiGroup.rotation.y, 0.015, t);
-    rightSkiGroup.rotation.y = lerp(rightSkiGroup.rotation.y, -0.015, t);
-    leftSkiGroup.rotation.z *= 1 - 0.85 * t;
-    rightSkiGroup.rotation.z *= 1 - 0.85 * t;
+    const tuckFlatten = 0.55 * t;
+    leftSkiGroup.rotation.y = lerp(leftSkiGroup.rotation.y, 0.015, tuckFlatten);
+    rightSkiGroup.rotation.y = lerp(rightSkiGroup.rotation.y, -0.015, tuckFlatten);
+    leftSkiGroup.rotation.z *= 1 - 0.45 * t;
+    rightSkiGroup.rotation.z *= 1 - 0.45 * t;
 
     leftArmGroup.rotation.x += TUCK_ARM_BACK * t;
     rightArmGroup.rotation.x += TUCK_ARM_BACK * t;

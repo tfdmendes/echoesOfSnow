@@ -25,8 +25,8 @@ const SPEED_RAMP     = 0.4;
 const LATERAL_SPEED  = 6;
 // Crossing PLAY_HALF_X triggers the boundary fall; kept in sync with terrain.js
 const LATERAL_LIMIT  = PLAY_HALF_X;
-const LEAN_ANGLE     = 0.18;
-const LEAN_SPEED     = 6;
+const LEAN_ANGLE     = 0.32;
+const LEAN_SPEED     = 8;
 const SAFE_CHUNKS    = 2;
 
 // Edge-fall physics (boundary slip)
@@ -949,7 +949,7 @@ function animate(now) {
         if (keys.right) targetLean = -LEAN_ANGLE;
         skier.rotation.z += (targetLean - skier.rotation.z) * LEAN_SPEED * delta;
 
-        animateSkier(elapsed);
+        animateSkier(elapsed, { boost: boostAmount, brake: brakeAmount });
         // Tuck/snowplow biases stack on top of the baseline animateSkier pose
         applySkierTuckPose(boostAmount);
         applySkierSnowplowPose(brakeAmount);
