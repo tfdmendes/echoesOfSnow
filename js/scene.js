@@ -8,7 +8,7 @@ import {
 } from './skier.js';
 import {
     createTerrain, updateTerrain,
-    CHUNK_LENGTH, CHUNK_WIDTH, PLAY_HALF_X
+    CHUNK_LENGTH, CHUNK_WIDTH, PLAY_HALF_X, SLOPE_TILT
 } from './terrain.js';
 import { populateChunk, clearChunk, lanternMat, lamppostBulbMat, updateFireflies } from './obstacles.js';
 import { checkSkierCollision } from './collision.js';
@@ -431,7 +431,15 @@ function updateCycle(normalizedTime) {
 //  TERRAIN & TEXTURES
 // ============================================================
 
-scene.add(skier);
+// Tilted mount so the skis sit flush on the slope. All the existing
+// skier.rotation logic (lean, crash pitch) still runs in the local frame.
+// position.y compensates for the leg-chain offset that left the skis
+// hovering above the snow once the tilt was applied
+const skierMount = new THREE.Group();
+skierMount.rotation.x = SLOPE_TILT;
+skierMount.position.y = -0.04;
+skierMount.add(skier);
+scene.add(skierMount);
 
 const chunks = createTerrain(scene);
 

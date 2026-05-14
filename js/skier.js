@@ -352,7 +352,8 @@ export function animateSkier(time, controls = {}) {
     const leftAnkleX = BASE_ANKLE_FLEX - compression * 0.25 - legCounter * 0.2;
     const rightAnkleX = BASE_ANKLE_FLEX - compression * 0.25 + legCounter * 0.2;
 
-    skier.position.y = 0.012 + Math.max(0, absorb) * 0.012 * footMotion;
+    const leanLift = HIP_SPACING * Math.abs(Math.sin(turnLean));
+    skier.position.y = 0.012 + Math.max(0, absorb) * 0.012 * footMotion + leanLift;
 
     upperBodyGroup.position.set(0, WAIST_Y - 0.01 + compression * 0.25 - turnCompression, 0.012);
     upperBodyGroup.rotation.x = BASE_BODY_LEAN + 0.02 * poleFloat + boost * 0.03 - brake * 0.04;
@@ -372,8 +373,10 @@ export function animateSkier(time, controls = {}) {
 
     leftSkiGroup.position.set(0, -0.06, 0.035);
     rightSkiGroup.position.set(0, -0.06, 0.035);
-    leftSkiGroup.rotation.x = -0.20 - glide * 0.05 * footMotion;
-    rightSkiGroup.rotation.x = -0.20 + glide * 0.05 * footMotion;
+    // -0.16 makes the leg chain sum to zero around X, so the ski lies parallel
+    // to the slope tangent once skierMount applies its tilt
+    leftSkiGroup.rotation.x = -0.16 - glide * 0.05 * footMotion;
+    rightSkiGroup.rotation.x = -0.16 + glide * 0.05 * footMotion;
     leftSkiGroup.rotation.y = 0.015 + turnSide * 0.050 * turnAmount;
     rightSkiGroup.rotation.y = -0.015 + turnSide * 0.050 * turnAmount;
     leftSkiGroup.rotation.z = turnSide * 0.220 * turnAmount;
@@ -391,8 +394,10 @@ export function animateSkier(time, controls = {}) {
     rightArmGroup.rotation.set(armX - 0.130 * rightInside + 0.060 * rightOutside, 0, armZ + 0.115 * rightInside);
     leftForearmGroup.rotation.set(forearmX - 0.065 * leftInside, 0, 0);
     rightForearmGroup.rotation.set(forearmX - 0.065 * rightInside, 0, 0);
-    leftPoleGroup.rotation.set(poleX - 0.120 * leftInside, 0, -0.125 * leftInside);
-    rightPoleGroup.rotation.set(poleX - 0.120 * rightInside, 0, 0.125 * rightInside);
+    // Inside pole tilts further back during a lean so its tip rises away
+    // from the snow rather than swinging forward and clipping in
+    leftPoleGroup.rotation.set(poleX + 0.220 * leftInside, 0, -0.125 * leftInside);
+    rightPoleGroup.rotation.set(poleX + 0.220 * rightInside, 0, 0.125 * rightInside);
 }
 
 export function resetSkierPose() {
@@ -487,7 +492,9 @@ const TUCK_KNEE_BEND = 0.26;
 const TUCK_ANKLE_FLEX = -0.05;
 const TUCK_ARM_BACK = 0.55;
 const TUCK_FOREARM_PULL = -0.45;
-const TUCK_POLE_LIFT = -0.55;
+// Positive value rotates the pole backward off the hand, so the tip
+// tucks up behind the skier instead of dipping into the snow
+const TUCK_POLE_LIFT = 0.55;
 
 const PLOW_BODY_RISE = 0.04;
 const PLOW_BODY_UPRIGHT = -0.16;
@@ -519,8 +526,8 @@ export function applySkierTuckPose(amount) {
     leftAnkleGroup.rotation.x += TUCK_ANKLE_FLEX * t;
     rightAnkleGroup.rotation.x += TUCK_ANKLE_FLEX * t;
 
-    leftSkiGroup.rotation.x += 0.09 * t;
-    rightSkiGroup.rotation.x += 0.09 * t;
+    // Skis stay parallel to the slope in tuck — tipping them down here used
+    // to dig the front into the snow once the slope tilt was in place
     const tuckFlatten = 0.55 * t;
     leftSkiGroup.rotation.y = lerp(leftSkiGroup.rotation.y, 0.015, tuckFlatten);
     rightSkiGroup.rotation.y = lerp(rightSkiGroup.rotation.y, -0.015, tuckFlatten);

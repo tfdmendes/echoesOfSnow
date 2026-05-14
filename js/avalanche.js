@@ -6,6 +6,7 @@ const TRACK_WIDTH = CHUNK_WIDTH - 1.2;
 export const FRONT_DISTANCE = 10.0;
 const CLOUD_DEPTH = 10.5;
 const CLOUD_HEIGHT = 7.35;
+const BASE_Y = 0.8;
 
 const VEIL_COUNT = 5;
 const BILLBOARD_COUNT = 80;
@@ -374,7 +375,7 @@ export function updateAvalanche(avalanche, skierPosition, delta, time, gap = FRO
 
     // Centre on the skiable plane so the skier can dodge laterally inside it
     avalanche.position.x += (0 - avalanche.position.x) * follow;
-    avalanche.position.y = 0;
+    avalanche.position.y = BASE_Y;
     avalanche.position.z = skierPosition.z - gap;
 
     for (let i = 0; i < avalanche.userData.veils.length; i++) {

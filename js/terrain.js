@@ -5,6 +5,7 @@ export const CHUNK_LENGTH = 80;
 export const CHUNK_WIDTH  = 32;                 // playable ridge width
 export const PLAY_HALF_X  = CHUNK_WIDTH / 2;    // skier falls if |x| > this
 const POOL_SIZE = 8;
+export const SLOPE_TILT = 0.10;
 
 
 // Drop matches VALLEY_FLOOR_Y in scenery.js so slope and floor meet seamlessly
@@ -208,11 +209,17 @@ export function createTerrain(scene) {
     snowMaterial.map = makeSnowTexture();
     snowMaterial.needsUpdate = true;
 
+    // Chunks live in this tilted group; updateTerrain still slides them in
+    // their own local Z, the parent does the slope work
+    const slopeGroup = new THREE.Group();
+    slopeGroup.rotation.x = SLOPE_TILT;
+    scene.add(slopeGroup);
+
     const chunks = [];
     for (let i = 0; i < POOL_SIZE; i++) {
         const chunk = createChunk();
         chunk.position.z = i * CHUNK_LENGTH;
-        scene.add(chunk);
+        slopeGroup.add(chunk);
         chunks.push(chunk);
     }
     return chunks;
