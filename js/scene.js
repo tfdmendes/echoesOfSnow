@@ -25,6 +25,7 @@ import {
     getBiomeForNextChunk, resetBiomeProgression, getBiome,
     BIOME_BASE, BIOME_BLIZZARD
 } from './biomes.js';
+import { createMenu } from './menu.js';
 
 
 // ============================================================
@@ -647,194 +648,34 @@ document.body.appendChild(hud);
 const overlay = document.createElement('div');
 overlay.style.cssText =
     'position:fixed; inset:0; display:flex; flex-direction:column;' +
-    'align-items:center; justify-content:center; background:rgba(0,0,0,0.55);' +
+    'align-items:center; justify-content:center;' +
+    'background:linear-gradient(180deg, rgba(10,12,30,0.88) 0%, rgba(20,35,70,0.78) 100%);' +
     'color:#fff; font-family:sans-serif; z-index:20; pointer-events:none;' +
     'opacity:0; transition:opacity 0.4s;';
 overlay.innerHTML =
-    '<div style="font-size:48px; font-weight:bold; margin-bottom:12px;">GAME OVER</div>' +
-    '<div id="go-score" style="font-size:22px; margin-bottom:24px;"></div>' +
-    '<div style="font-size:16px; opacity:0.8;">Press R to restart</div>';
+    '<div style="font-family:Georgia,serif; font-size:clamp(40px,9vw,72px);' +
+        'font-weight:bold; letter-spacing:12px; color:#e4edf5;' +
+        'text-shadow:0 0 30px rgba(150,200,255,0.4); margin-bottom:16px;">DEATH</div>' +
+    '<div id="go-score" style="font-size:20px; letter-spacing:2px;' +
+        'color:#a0b8d0; margin-bottom:36px;"></div>' +
+    '<div style="display:flex; flex-direction:column;">' +
+        '<button id="go-restart" class="menu-btn menu-btn-primary">RESTART</button>' +
+        '<button id="go-menu"    class="menu-btn">MAIN MENU</button>' +
+    '</div>';
 document.body.appendChild(overlay);
+overlay.querySelector('#go-restart').addEventListener('click', () => restartGame());
+overlay.querySelector('#go-menu').addEventListener('click', () => returnToMenu());
 
 
 // ============================================================
-//  MAIN MENU OVERLAY
+//  MAIN MENU
 // ============================================================
 
-// CSS keyframes for the menu animations
-const menuStyleSheet = document.createElement('style');
-menuStyleSheet.textContent = `
-    @keyframes snowfall {
-        0%   { transform: translateY(-10vh) rotate(0deg); opacity: 0; }
-        10%  { opacity: 1; }
-        90%  { opacity: 0.8; }
-        100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
-    }
-    @keyframes pulseText {
-        0%, 100% { opacity: 0.5; }
-        50%      { opacity: 1.0; }
-    }
-    @keyframes snowflakeSpin {
-        from { transform: rotate(0deg); }
-        to   { transform: rotate(360deg); }
-    }
-`;
-document.head.appendChild(menuStyleSheet);
-
-// Full-screen container, flex-centered around the title block
-const menuOverlay = document.createElement('div');
-menuOverlay.style.cssText =
-    'position:fixed; inset:0; display:flex; flex-direction:column;' +
-    'align-items:center; justify-content:center;' +
-    'background:linear-gradient(180deg, rgba(10,12,30,0.88) 0%, rgba(20,35,70,0.78) 100%);' +
-    'z-index:30; overflow:hidden; transition:opacity 0.8s;';
-
-// ---- Title: "ECHOES OF" ----
-const titleLine1 = document.createElement('div');
-titleLine1.style.cssText =
-    'font-family:Georgia,serif; font-size:clamp(18px,4vw,32px);' +
-    'letter-spacing:10px; color:#c0d0e8; opacity:0.8;' +
-    'text-shadow:0 0 15px rgba(140,180,255,0.4); user-select:none;';
-titleLine1.textContent = 'ECHOES OF';
-menuOverlay.appendChild(titleLine1);
-
-
-const titleLine2 = document.createElement('div');
-titleLine2.style.cssText =
-    'font-family:Georgia,serif; font-size:clamp(48px,12vw,96px);' +
-    'font-weight:bold; letter-spacing:14px; color:#e4edf5;' +
-    'text-shadow:0 0 30px rgba(150,200,255,0.5), 0 2px 6px rgba(0,0,0,0.8);' +
-    'margin-top:4px; user-select:none;';
-titleLine2.innerHTML =
-    'SN<span style="display:inline-block; color:#a8cce8;' +
-    'animation:snowflakeSpin 10s linear infinite;' +
-    'text-shadow:0 0 18px rgba(160,200,255,0.7);">&#10052;</span>W';
-menuOverlay.appendChild(titleLine2);
-
-// ---- Start prompt ----
-const startPrompt = document.createElement('div');
-startPrompt.style.cssText =
-    'margin-top:48px; font-family:sans-serif; font-size:clamp(12px,2vw,18px);' +
-    'color:#a0b8d0; letter-spacing:4px;' +
-    'animation:pulseText 2.5s ease-in-out infinite; user-select:none;';
-startPrompt.textContent = 'PRESS SPACE TO START';
-menuOverlay.appendChild(startPrompt);
-
-// ---- Controls hint ----
-const controlsHint = document.createElement('div');
-controlsHint.style.cssText =
-    'position:absolute; bottom:32px; font-family:monospace;' +
-    'font-size:clamp(10px,1.4vw,14px); color:#7890a8; opacity:0.6;' +
-    'letter-spacing:2px; text-align:center; user-select:none;';
-controlsHint.innerHTML =
-    'A / &#8592; &mdash; Left &nbsp;&nbsp;&nbsp;' +
-    'D / &#8594; &mdash; Right &nbsp;&nbsp;&nbsp;' +
-    'W / &#8593; &mdash; Tuck (faster) &nbsp;&nbsp;&nbsp;' +
-    'S / &#8595; &mdash; Snowplow (brake) &nbsp;&nbsp;&nbsp;' +
-    'T &mdash; Camera';
-menuOverlay.appendChild(controlsHint);
-
-
-const MENU_SNOWFLAKE_COUNT = 35;
-for (let i = 0; i < MENU_SNOWFLAKE_COUNT; i++) {
-    const flake = document.createElement('div');
-    const size     = 6 + Math.random() * 14;
-    const opacity  = 0.1 + Math.random() * 0.25;
-    const duration = 6 + Math.random() * 12;
-    const delay    = Math.random() * duration;
-    flake.textContent = '\u2744';
-    flake.style.cssText =
-        'position:absolute; pointer-events:none;' +
-        'color:rgba(200,220,255,' + opacity + ');' +
-        'font-size:' + size + 'px;' +
-        'left:' + (Math.random() * 100) + '%;' +
-        'animation:snowfall ' + duration + 's linear ' + delay + 's infinite;';
-    menuOverlay.appendChild(flake);
-}
-
-const settingsCog = document.createElement('div');
-settingsCog.style.cssText =
-    'position:absolute; top:24px; right:24px; width:48px; height:48px;' +
-    'display:flex; align-items:center; justify-content:center;' +
-    'font-size:30px; color:#a0b8d0; cursor:pointer; user-select:none;' +
-    'border-radius:50%; background:rgba(0,0,0,0.25);' +
-    'transition:transform 0.4s ease, color 0.2s, background 0.2s;';
-settingsCog.textContent = '⚙';
-settingsCog.addEventListener('mouseenter', () => {
-    settingsCog.style.color = '#e4edf5';
-    settingsCog.style.transform = 'rotate(60deg)';
-    settingsCog.style.background = 'rgba(0,0,0,0.4)';
+const menu = createMenu({
+    onPlay: () => startGame(),
+    getStartCycleOffset: () => startCycleOffset,
+    setStartCycleOffset: (t) => { startCycleOffset = t; },
 });
-settingsCog.addEventListener('mouseleave', () => {
-    settingsCog.style.color = '#a0b8d0';
-    settingsCog.style.transform = 'rotate(0deg)';
-    settingsCog.style.background = 'rgba(0,0,0,0.25)';
-});
-menuOverlay.appendChild(settingsCog);
-
-const settingsPanel = document.createElement('div');
-settingsPanel.style.cssText =
-    'position:absolute; top:84px; right:24px; width:280px;' +
-    'background:rgba(15,22,40,0.92);' +
-    'border:1px solid rgba(160,184,208,0.25); border-radius:10px;' +
-    'padding:18px 20px; color:#c0d0e8; font-family:sans-serif;' +
-    'box-shadow:0 4px 24px rgba(0,0,0,0.55);' +
-    'display:none; opacity:0; transition:opacity 0.25s;';
-settingsPanel.innerHTML = `
-    <div style="font-size:11px; opacity:0.55; letter-spacing:2px; text-transform:uppercase; margin-bottom:6px;">Start of run</div>
-    <div id="time-label" style="font-size:20px; font-weight:bold; color:#e4edf5; margin-bottom:14px; letter-spacing:1px;">Morning</div>
-    <input id="time-slider" type="range" min="0" max="1000" value="120" style="width:100%; cursor:pointer; accent-color:#a0b8d0;">
-    <div style="display:flex; justify-content:space-between; font-size:10px; opacity:0.5; margin-top:4px; letter-spacing:1px;">
-        <span>00:00</span><span>12:00</span><span>24:00</span>
-    </div>
-`;
-menuOverlay.appendChild(settingsPanel);
-
-function timeLabelFor(t) {
-    if (t < 0.06) return 'Midnight';
-    if (t < 0.10) return 'Pre-dawn';
-    if (t < 0.16) return 'Dawn';
-    if (t < 0.38) return 'Morning';
-    if (t < 0.52) return 'Midday';
-    if (t < 0.62) return 'Afternoon';
-    if (t < 0.68) return 'Sunset';
-    if (t < 0.76) return 'Dusk';
-    if (t < 0.95) return 'Night';
-    return 'Late night';
-}
-
-const timeSlider = settingsPanel.querySelector('#time-slider');
-const timeLabel  = settingsPanel.querySelector('#time-label');
-timeSlider.value = Math.round(startCycleOffset * 1000);
-timeLabel.textContent = timeLabelFor(startCycleOffset);
-timeSlider.addEventListener('input', () => {
-    const t = parseInt(timeSlider.value, 10) / 1000;
-    startCycleOffset = t;
-    timeLabel.textContent = timeLabelFor(t);
-});
-
-settingsCog.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const opening = settingsPanel.style.display === 'none';
-    if (opening) {
-        settingsPanel.style.display = 'block';
-        requestAnimationFrame(() => { settingsPanel.style.opacity = '1'; });
-    } else {
-        settingsPanel.style.opacity = '0';
-        setTimeout(() => { settingsPanel.style.display = 'none'; }, 250);
-    }
-});
-
-document.addEventListener('click', (e) => {
-    if (settingsPanel.style.display === 'block'
-        && !settingsPanel.contains(e.target)
-        && !settingsCog.contains(e.target)) {
-        settingsPanel.style.opacity = '0';
-        setTimeout(() => { settingsPanel.style.display = 'none'; }, 250);
-    }
-});
-
-document.body.appendChild(menuOverlay);
 
 
 // ============================================================
@@ -970,6 +811,7 @@ function showGameOver() {
     document.getElementById('go-score').textContent =
         'Score: ' + Math.floor(score) + ' m';
     overlay.style.opacity = '1';
+    overlay.style.pointerEvents = 'auto';
 }
 
 function beginEdgeFall() {
@@ -1051,29 +893,25 @@ function keepCrashBodyAboveSnow() {
 }
 
 
-// Reset lastTime so the first frame delta is near zero
 function startGame() {
     gameState = 'playing';
     lastTime  = performance.now();
-    menuOverlay.style.opacity       = '0';
-    menuOverlay.style.pointerEvents = 'none';
+    menu.hide();
     hud.style.display = 'block';
 }
 
 
-function restartGame() {
+function resetWorld() {
     skier.position.set(0, 0, 0);
     skier.rotation.set(0, 0, 0);
     resetSkierPose();
     resetSkierEquipment();
 
-    // Reset state before repopulating so chunks see score = 0
     elapsed   = 0;
     score     = 0;
     gameSpeed = SPEED_INITIAL;
     lastTime  = performance.now();
 
-    // Clear any leftover falling state from the previous run
     fallTimer = 0;
     fallVelY  = 0;
     fallDir   = 0;
@@ -1087,7 +925,6 @@ function restartGame() {
     fallStartRotY = 0;
     fallStartRotZ = 0;
 
-    // Reset speed-control state so a fresh run starts clean
     keys.boost = false;
     keys.brake = false;
     boostAmount = 0;
@@ -1108,8 +945,6 @@ function restartGame() {
         }
     }
 
-    // Storm state must snap to zero so leftover flakes, streaks, or an
-    // in-flight gust from the previous run do not bleed into the next one
     blizzardFactor = 0;
     windGust.mode = 'calm';
     windGust.timer = 0;
@@ -1122,8 +957,25 @@ function restartGame() {
     camera.position.set(0, 3, -5);
     camLook.set(0, 0.8, 4);
     camMode = 0;
-    gameState = 'playing';
+}
+
+function hideGameOverOverlay() {
     overlay.style.opacity = '0';
+    overlay.style.pointerEvents = 'none';
+}
+
+function restartGame() {
+    resetWorld();
+    gameState = 'playing';
+    hideGameOverOverlay();
+}
+
+function returnToMenu() {
+    resetWorld();
+    gameState = 'menu';
+    hideGameOverOverlay();
+    hud.style.display = 'none';
+    menu.show();
 }
 
 
