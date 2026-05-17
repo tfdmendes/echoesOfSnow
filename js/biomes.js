@@ -1,49 +1,36 @@
-import { PLAY_HALF_X } from './terrain.js';
+export const BIOME_BASE     = 'base';
+export const BIOME_FOREST   = 'forest';
+export const BIOME_BLIZZARD = 'blizzard';
 
-export const BIOME_BASE   = 'base';
-export const BIOME_FOREST = 'forest';
-
-// Each chunk past this game speed adds one extra chunk to the active biome's length.
-// Lets fast players stay longer in each biome instead of zipping past in seconds.
-const SPEED_LENGTH_STEP = 5;
-const SPEED_BASELINE = 14;
+const SPEED_SPAN_STEP = 5;
+const SPEED_BASELINE  = 14;
 
 /**
- * Biome registry.
+ * Biome registry. Fields:
+ *   spawnChance        Relative pick weight (normalised at pick time).
+ *   chunkSpan          Consecutive chunks the biome occupies once picked;
+ *                      grows with gameSpeed via SPEED_SPAN_STEP.
+ *   densityMultiplier  Scales the base obstacle count per chunk.
+ *   minSpacing         Min distance (world units) between obstacle centres.
+ *   weights            Day-time obstacle type weights (normalised on sample).
+ *   nightWeights       Same shape, used at night.
  *
- * Each biome describes:
- *   - spawnWeight       Relative probability of being picked when the current biome
- *                       ends. Values are normalised at pick time, so absolute scale
- *                       does not matter (e.g. {1, 2} is equivalent to {0.33, 0.66}).
- * 
- *   - chunkLength       Base number of consecutive chunks assigned to this biome
- *                       once it is picked. Effective length grows with game speed
- *                       via SPEED_LENGTH_STEP.
- * 
- *   - densityMultiplier Scales the base obstacle count per chunk. 1.0 = unchanged,
- *                       3.0 = three times more obstacles attempted in the chunk.
- *                       Effective count is still bounded by minSpacing rejection.
- * 
- *   - lateralLimit      Half-width of the playable corridor (in world units).
- *                       Crossing |x| > lateralLimit triggers an edge fall.
- *                       Forest narrows this so trees on the sides feel like walls.
- * 
- *   - minSpacing        Minimum distance (world units) between obstacle centres
- *                       within a chunk. Lower = denser packing allowed.
- * 
- *   - weights           Day-time probability table for picking each obstacle kind.
- *                       Values are relative; they are normalised by total when sampled.
- * 
- *   - nightWeights      Same shape as weights, but used when the chunk is populated
- *                       at night. Lets night swap in lit obstacles, drop dark ones, etc.
+ * Optional (blizzard-only today):
+ *   windPeakForce      Peak lateral force on the skier, m/s, at gust centre.
+ *   windGustMin/Max    Gust duration window, seconds (half-sine envelope).
+ *   windTelegraphMin/Max  Silent lead-in before each gust, seconds.
+ *   windCalmMin/Max    Quiet interval between gust cycles, seconds.
+ *   windApproachDist   Look-ahead (world units) for the storm front fade-in.
+ *   fogNearOverride    Target fog.near under full blizzard effect.
+ *   fogFarOverride     Target fog.far under full blizzard effect.
+ *   fogColorOverride   Hex colour the fog tints toward.
  */
 export const BIOMES = {
     [BIOME_BASE]: {
         name: BIOME_BASE,
-        spawnWeight: 0.35,
-        chunkLength: 4,
+        spawnChance: 0.90,
+        chunkSpan: 4,
         densityMultiplier: 1.0,
-        lateralLimit: PLAY_HALF_X,
         minSpacing: 3.5,
         weights: {
             tree: 0.28, rock: 0.13, snowman: 0.13, fallenLog: 0.13,
@@ -56,10 +43,9 @@ export const BIOMES = {
     },
     [BIOME_FOREST]: {
         name: BIOME_FOREST,
-        spawnWeight: 0.65,
-        chunkLength: 20,
+        spawnChance: 0.25,
+        chunkSpan: 20,
         densityMultiplier: 3.5,
-        lateralLimit: PLAY_HALF_X * 0.65,
         minSpacing: 2.1,
         weights: {
             tree: 0.78, rock: 0.05, snowman: 0.00, fallenLog: 0.10,
@@ -70,27 +56,50 @@ export const BIOMES = {
             stump: 0.07, fence: 0.00, litFence: 0.00, lamppost: 0.00,
         },
     },
+    [BIOME_BLIZZARD]: {
+        name: BIOME_BLIZZARD,
+        spawnChance: 0.10,
+        chunkSpan: 10,
+        densityMultiplier: 0.7,
+        minSpacing: 3.8,
+        weights: {
+            tree: 0.18, rock: 0.30, snowman: 0.04, fallenLog: 0.20,
+            stump: 0.20, fence: 0.08, litFence: 0.00, lamppost: 0.00,
+        },
+        nightWeights: {
+            tree: 0.18, rock: 0.30, snowman: 0.04, fallenLog: 0.20,
+            stump: 0.20, fence: 0.08, litFence: 0.00, lamppost: 0.00,
+        },
+        windPeakForce:        6.5,
+        windGustMin:          1.2,
+        windGustMax:          2.4,
+        windTelegraphMin:     0.7,
+        windTelegraphMax:     1.1,
+        windCalmMin:          1.8,
+        windCalmMax:          3.6,
+        windApproachDist:     90,
+        fogNearOverride:      12,
+        fogFarOverride:       80,
+        fogColorOverride:     0xdfe6ec,
+    },
 };
 
 let currentBiome = BIOME_BASE;
 let chunksRemainingInBiome = 0;
 
-function biomeLengthForSpeed(biomeName, gameSpeed) {
+function biomeSpanForSpeed(biomeName, gameSpeed) {
     const biome = BIOMES[biomeName];
-    const bonus = Math.max(0, Math.floor((gameSpeed - SPEED_BASELINE) / SPEED_LENGTH_STEP));
-    return biome.chunkLength + bonus;
+    const bonus = Math.max(0, Math.floor((gameSpeed - SPEED_BASELINE) / SPEED_SPAN_STEP));
+    return biome.chunkSpan + bonus;
 }
 
-// Weighted random pick across all biomes using their spawnWeight field.
-// Repeats are allowed: a biome can be picked twice in a row, which produces
-// long stretches of the same terrain when its weight is high.
 function pickWeightedBiome() {
     let total = 0;
-    for (const name in BIOMES) total += BIOMES[name].spawnWeight;
+    for (const name in BIOMES) total += BIOMES[name].spawnChance;
 
     let r = Math.random() * total;
     for (const name in BIOMES) {
-        r -= BIOMES[name].spawnWeight;
+        r -= BIOMES[name].spawnChance;
         if (r <= 0) return name;
     }
     return BIOME_BASE;
@@ -99,7 +108,7 @@ function pickWeightedBiome() {
 export function getBiomeForNextChunk(gameSpeed) {
     if (chunksRemainingInBiome <= 0) {
         currentBiome = pickWeightedBiome();
-        chunksRemainingInBiome = biomeLengthForSpeed(currentBiome, gameSpeed);
+        chunksRemainingInBiome = biomeSpanForSpeed(currentBiome, gameSpeed);
     }
     chunksRemainingInBiome--;
     return currentBiome;
@@ -107,7 +116,7 @@ export function getBiomeForNextChunk(gameSpeed) {
 
 export function resetBiomeProgression() {
     currentBiome = BIOME_BASE;
-    chunksRemainingInBiome = biomeLengthForSpeed(BIOME_BASE, SPEED_BASELINE);
+    chunksRemainingInBiome = biomeSpanForSpeed(BIOME_BASE, SPEED_BASELINE);
 }
 
 export function getBiome(name) {

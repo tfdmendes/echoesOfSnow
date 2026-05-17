@@ -10,12 +10,20 @@ import {
     createTerrain, updateTerrain,
     CHUNK_LENGTH, CHUNK_WIDTH, PLAY_HALF_X, SLOPE_TILT
 } from './terrain.js';
-import { populateChunk, clearChunk, lanternMat, lamppostBulbMat, updateFireflies } from './obstacles.js';
+import {
+    populateChunk, clearChunk,
+    lanternMat, lamppostBulbMat,
+    updateFireflies,
+    getBlizzardEmitter, updateBlizzard,
+    getWindStreakEmitter, spawnWindStreak, updateWindStreaks,
+    resetBlizzard
+} from './obstacles.js';
 import { checkSkierCollision } from './collision.js';
 import { createScenery, updateScenery } from './scenery.js';
 import { createAvalanche, updateAvalanche, FRONT_DISTANCE } from './avalanche.js';
 import {
-    getBiomeForNextChunk, resetBiomeProgression, getBiome, BIOME_BASE
+    getBiomeForNextChunk, resetBiomeProgression, getBiome,
+    BIOME_BASE, BIOME_BLIZZARD
 } from './biomes.js';
 
 
@@ -26,9 +34,6 @@ import {
 const SPEED_INITIAL  = 14;
 const SPEED_RAMP     = 0.4;
 const LATERAL_SPEED  = 6;
-// Per-chunk biome may shrink this; updated each frame from the chunk under the skier
-const LATERAL_LIMIT_DEFAULT = PLAY_HALF_X;
-let currentLateralLimit = PLAY_HALF_X;
 const LEAN_ANGLE     = 0.32;
 const LEAN_SPEED     = 8;
 const SAFE_CHUNKS    = 2;
@@ -58,6 +63,38 @@ const CRASH_MIN_BODY_Y   = 0.03;
 
 // Day/night cycle length (seconds)
 const CYCLE_DURATION = 130;
+
+// Smooth ramp for the blizzard weather override. Mirrors how nightFactor
+// derives from sun intensity: a continuous 0..1 value rather than a snap, so
+// transitions in/out of the storm look like the weather front is moving in.
+// The target is itself distance-based (see computeBlizzardTarget) so this
+// blend rate only needs to mask discrete chunk-boundary transitions.
+const BLIZZARD_BLEND_RATE = 1.4;
+let blizzardFactor = 0;
+const tmpBlizzardColor = new THREE.Color();
+
+// Wind gust state machine. Each cycle is calm -> telegraph -> gust -> calm.
+// The telegraph phase emits the same streaks as the gust but applies no
+// force, giving the player a beat to read the incoming direction and brace
+// before the actual push lands. Parameters come from the active biome so
+// other future weather biomes can reuse the same controller.
+const windGust = {
+    mode: 'calm',      // 'calm' | 'telegraph' | 'gust'
+    timer: 0,          // seconds elapsed in the current mode
+    duration: 1.5,     // total length of the current mode
+    direction: 1,      // +1 or -1, sign of the lateral push (sampled at telegraph onset)
+    peak: 0,           // peak |force| sampled from biome.windPeakForce
+};
+
+// Cadence timer for in-world wind streak spawning during a gust. Reset on
+// each spawn so the streaks arrive at irregular intervals instead of in
+// lockstep, which would read as a particle system.
+let windStreakSpawnTimer = 0;
+const WIND_STREAK_BURST_ON_START = 10;
+
+function randInRange(min, max) {
+    return min + Math.random() * (max - min);
+}
 
 // ---- Speed control: tuck (W) and snowplow (S) ----
 // W banks bonusSpeed permanently; S applies a multiplicative brake while held
@@ -459,6 +496,15 @@ const sceneryRing = createScenery(scene);
 const avalanche = createAvalanche(scene);
 
 
+const blizzardEmitter = getBlizzardEmitter();
+scene.add(blizzardEmitter);
+
+// Separate emitter for the directional wind-streak sprites. World-anchored
+// so streaks fly past the skier in absolute terms instead of orbiting him.
+const windStreakEmitter = getWindStreakEmitter();
+scene.add(windStreakEmitter);
+
+
 // ============================================================
 //  SPEED LINES (2D canvas overlay above the WebGL viewport)
 // ============================================================
@@ -841,13 +887,82 @@ function onChunkRecycle(chunk) {
     populateChunk(chunk, CHUNK_LENGTH, CHUNK_WIDTH, score, isNightTime(), biomeName);
 }
 
-function getCurrentLateralLimit() {
+
+// Returns the biome whose chunk currently straddles the skier's origin. Used
+// by per-frame hooks (wind state, fog override) that need the active biome's
+// full property bag. Falls back to BIOME_BASE during the transient frame when
+// no chunk straddles z=0 (chunk recycling).
+function getCurrentBiome() {
     for (const c of chunks) {
         if (c.position.z > -CHUNK_LENGTH / 2 && c.position.z <= CHUNK_LENGTH / 2) {
-            return getBiome(c.userData.biome || BIOME_BASE).lateralLimit;
+            return getBiome(c.userData.biome || BIOME_BASE);
         }
     }
-    return LATERAL_LIMIT_DEFAULT;
+    return getBiome(BIOME_BASE);
+}
+
+// Distance-based target for blizzardFactor. Scans the chunk pool for the
+// nearest blizzard chunk ahead of (or under) the skier and converts the gap
+// to its near edge into a 0..1 ramp. The result is the storm "front" being
+// visible long before the player enters it: fog tightens and snow particles
+// fade in as the distance closes.
+function computeBlizzardTarget() {
+    const approach = getBiome(BIOME_BLIZZARD).windApproachDist || 80;
+    let nearestDist = Infinity;
+
+    for (const c of chunks) {
+        if (c.userData.biome !== BIOME_BLIZZARD) continue;
+        // Near edge is the +Z face of the chunk in world space; chunks slide
+        // toward -Z each frame, so this distance shrinks as the storm approaches
+        const nearEdgeZ = c.position.z - CHUNK_LENGTH / 2;
+        const dist = nearEdgeZ - skier.position.z;
+        // Reject chunks fully past the skier so the ramp does not re-fire
+        // from the tail end of the front
+        if (dist < -CHUNK_LENGTH) continue;
+        if (dist < nearestDist) nearestDist = dist;
+    }
+
+    if (nearestDist === Infinity) return 0;
+    if (nearestDist <= 0) return 1;
+    return Math.max(0, 1 - nearestDist / approach);
+}
+
+// Advance the gust state machine and return the lateral force for this tick.
+// On every mode transition a fresh duration is sampled from the biome's
+// range; the direction and peak are sampled once at telegraph onset and
+// carried into the gust phase. Only the 'gust' phase applies force — calm
+// and telegraph both return 0.
+function updateWindGust(delta, biome) {
+    if (!biome.windPeakForce) {
+        windGust.mode = 'calm';
+        windGust.timer = 0;
+        return 0;
+    }
+
+    windGust.timer += delta;
+    if (windGust.timer >= windGust.duration) {
+        windGust.timer = 0;
+        if (windGust.mode === 'calm') {
+            // Calm → telegraph: pick the new gust's direction now so the
+            // streaks that spawn this phase already match what will hit
+            windGust.mode      = 'telegraph';
+            windGust.duration  = randInRange(biome.windTelegraphMin, biome.windTelegraphMax);
+            windGust.direction = Math.random() < 0.5 ? -1 : 1;
+            windGust.peak      = biome.windPeakForce;
+        } else if (windGust.mode === 'telegraph') {
+            // Telegraph → gust: force ramp starts here, same direction
+            windGust.mode     = 'gust';
+            windGust.duration = randInRange(biome.windGustMin, biome.windGustMax);
+        } else {
+            windGust.mode     = 'calm';
+            windGust.duration = randInRange(biome.windCalmMin, biome.windCalmMax);
+        }
+    }
+
+    if (windGust.mode !== 'gust') return 0;
+    const x = windGust.timer / windGust.duration;
+    const envelope = Math.sin(Math.PI * x);
+    return windGust.direction * windGust.peak * envelope;
 }
 
 function showGameOver() {
@@ -993,6 +1108,17 @@ function restartGame() {
         }
     }
 
+    // Storm state must snap to zero so leftover flakes, streaks, or an
+    // in-flight gust from the previous run do not bleed into the next one
+    blizzardFactor = 0;
+    windGust.mode = 'calm';
+    windGust.timer = 0;
+    windGust.duration = 0;
+    windGust.direction = 1;
+    windGust.peak = 0;
+    windStreakSpawnTimer = 0;
+    resetBlizzard();
+
     camera.position.set(0, 3, -5);
     camLook.set(0, 0.8, 4);
     camMode = 0;
@@ -1011,10 +1137,55 @@ function animate(now) {
     const delta = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
 
+    // The current biome, this frame's wind force, and the blizzardFactor are
+    // computed once so the skier-side push, the fog override, the HUD, and
+    // the particle emitter all see exactly the same value.
+    const tickBiome = getCurrentBiome();
+
+    // Wind is intermittent: gusts of random direction and length separated by
+    // calm intervals. Updating the state machine each frame regardless of
+    // gameState keeps timers consistent if the storm front passes during a
+    // pause or a fall (no visual jolt on resume).
+    const gustModeBefore = windGust.mode;
+    const tickWindX = updateWindGust(delta, tickBiome);
+    const telegraphJustStarted = (gustModeBefore === 'calm' && windGust.mode === 'telegraph');
+
+    // In-world wind indicator. Streaks spawn during BOTH the telegraph and
+    // gust phases, so the player sees air rushing past for ~0.7-1.1 s before
+    // the actual push lands and has time to brace. Calm intervals spawn
+    // nothing, so the storm reads as breath-in / breath-out.
+    if (telegraphJustStarted) {
+        for (let i = 0; i < WIND_STREAK_BURST_ON_START; i++) {
+            spawnWindStreak(skier.position.x, skier.position.z, windGust.direction, 0.85);
+        }
+        windStreakSpawnTimer = 0.10;
+    }
+    if (windGust.mode === 'telegraph' || windGust.mode === 'gust') {
+        windStreakSpawnTimer -= delta;
+        if (windStreakSpawnTimer <= 0) {
+            // During telegraph there is no tickWindX to read; fall back to a
+            // steady 0.75 magnitude so streaks stay bold. During the gust the
+            // magnitude tracks the current force, so streaks visibly intensify
+            // through the peak.
+            const mag = windGust.mode === 'gust' && windGust.peak > 0
+                ? Math.max(0.55, Math.abs(tickWindX) / windGust.peak)
+                : 0.75;
+            spawnWindStreak(skier.position.x, skier.position.z, windGust.direction, mag);
+            windStreakSpawnTimer = 0.10 + Math.random() * 0.12;
+        }
+    }
+
+    // Distance-based target so the storm fades in while still ahead, instead
+    // of the factor snapping to 1 when the player enters the chunk. The
+    // exponential blend on top hides any discrete jumps when a new blizzard
+    // chunk is spawned at the far edge of the pool.
+    const blizzardTarget = computeBlizzardTarget();
+    const blizzardSmooth = 1 - Math.exp(-BLIZZARD_BLEND_RATE * delta);
+    blizzardFactor += (blizzardTarget - blizzardFactor) * blizzardSmooth;
+
     // -- Game update (only while playing) --
     if (gameState === 'playing') {
         elapsed  += delta;
-        currentLateralLimit = getCurrentLateralLimit();
 
         // Snowplow (S) overrides tuck (W), so S held collapses boostTarget to 0
         const boostTarget = (keys.boost && !keys.brake) ? 1.0 : 0.0;
@@ -1054,11 +1225,15 @@ function animate(now) {
 
         updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
 
-        // No hard clamp: |x| > currentLateralLimit triggers the boundary fall.
+        // No hard clamp: |x| > PLAY_HALF_X triggers the boundary fall.
         // Tucking shrinks lateral speed, so A/D dodging gets harder while W is held
         const lateralSpeed = LATERAL_SPEED * (1 - boostAmount * LATERAL_W_PENALTY);
         if (keys.left)  skier.position.x += lateralSpeed * delta;
         if (keys.right) skier.position.x -= lateralSpeed * delta;
+
+        // Weather biomes layer a sinusoidal lateral force on top of A/D input,
+        // so the skier has to keep reacting instead of counter-steering once.
+        skier.position.x += tickWindX * delta;
 
         // Lean into turns
         let targetLean = 0;
@@ -1072,7 +1247,7 @@ function animate(now) {
         applySkierSnowplowPose(brakeAmount);
 
         // Death checks in priority order: edge slip > obstacle > avalanche
-        if (Math.abs(skier.position.x) > currentLateralLimit) {
+        if (Math.abs(skier.position.x) > PLAY_HALF_X) {
             beginEdgeFall();
         }
         else {
@@ -1084,7 +1259,6 @@ function animate(now) {
             }
         }
 
-        // HUD
         hud.innerHTML =
             'Score: ' + Math.floor(score) + ' m<br>' +
             'Speed: ' + gameSpeed.toFixed(1) + ' m/s';
@@ -1181,6 +1355,17 @@ function animate(now) {
 
     updateCycle(cycleT);
 
+    // Blizzard fog override is layered on top of the day/night fog state.
+    // lerp() between the cycle's values and the storm's target values gives a
+    // smooth front rolling in/out without snapping the draw distance.
+    if (blizzardFactor > 0.001 && tickBiome.fogFarOverride !== undefined) {
+        scene.fog.near = THREE.MathUtils.lerp(scene.fog.near, tickBiome.fogNearOverride, blizzardFactor);
+        scene.fog.far  = THREE.MathUtils.lerp(scene.fog.far,  tickBiome.fogFarOverride,  blizzardFactor);
+        tmpBlizzardColor.setHex(tickBiome.fogColorOverride);
+        scene.fog.color.lerp(tmpBlizzardColor, blizzardFactor);
+        scene.background.lerp(tmpBlizzardColor, blizzardFactor);
+    }
+
     // Inverse of the sun: 0 by day, 1 once the sun drops below ~0.5 intensity
     const nightFactor = Math.max(0, 1.0 - sunLight.intensity / 0.5);
 
@@ -1190,6 +1375,8 @@ function animate(now) {
     lamppostBulbMat.emissiveIntensity = nightFactor * 2.5;
 
     updateFireflies(chunks, now * 0.001, nightFactor);
+    updateBlizzard(delta, blizzardFactor, tickWindX);
+    updateWindStreaks(delta, blizzardFactor);
 
     if (nightFactor > 0) {
         // Lampposts sit higher and shine stronger than fence lanterns

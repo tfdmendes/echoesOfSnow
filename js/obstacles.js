@@ -422,6 +422,293 @@ function spawnFireflies(chunkGroup, chunkLength, chunkWidth) {
     };
 }
 
+// ============================================================
+//  BLIZZARD WEATHER EMITTER
+// ============================================================
+
+const BLIZZARD_COUNT      = 250;
+const BLIZZARD_BOX_X      = 18;
+const BLIZZARD_BOX_Y_MIN  = 0.0;
+const BLIZZARD_BOX_Y_MAX  = 12.0;
+const BLIZZARD_BOX_Z      = 25;
+const BLIZZARD_FALL_MIN   = 3.0;
+const BLIZZARD_FALL_MAX   = 6.5;
+const BLIZZARD_DRIFT_MIN  = 0.35;
+const BLIZZARD_DRIFT_MAX  = 1.10;
+
+function makeSnowflakeTexture() {
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    const center = size / 2;
+    const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
+    gradient.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+    gradient.addColorStop(0.4, 'rgba(235, 245, 255, 0.55)');
+    gradient.addColorStop(1.0, 'rgba(210, 225, 245, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    return new THREE.CanvasTexture(canvas);
+}
+
+const SNOWFLAKE_TEXTURE = makeSnowflakeTexture();
+const snowflakeMat = new THREE.SpriteMaterial({
+    map: SNOWFLAKE_TEXTURE,
+    color: 0xffffff,
+    transparent: true,
+    depthWrite: false,
+    fog: true,
+    opacity: 0,
+});
+
+const blizzardEmitter = new THREE.Group();
+const blizzardSprites = [];
+
+function rand(min, max) { return min + Math.random() * (max - min); }
+
+for (let i = 0; i < BLIZZARD_COUNT; i++) {
+    const flake = new THREE.Sprite(snowflakeMat);
+    const scale = 0.18 + Math.random() * 0.22;
+    flake.scale.set(scale, scale, 1);
+    flake.position.set(
+        rand(-BLIZZARD_BOX_X, BLIZZARD_BOX_X),
+        rand(BLIZZARD_BOX_Y_MIN, BLIZZARD_BOX_Y_MAX),
+        rand(-BLIZZARD_BOX_Z, BLIZZARD_BOX_Z)
+    );
+    flake.userData.fallSpeed   = rand(BLIZZARD_FALL_MIN, BLIZZARD_FALL_MAX);
+    flake.userData.driftScale  = rand(BLIZZARD_DRIFT_MIN, BLIZZARD_DRIFT_MAX);
+    blizzardEmitter.add(flake);
+    blizzardSprites.push(flake);
+}
+
+export function getBlizzardEmitter() {
+    return blizzardEmitter;
+}
+
+
+// Emitter stays at world origin permanently. The skier lives near z=0 too
+// (chunks slide; the skier itself does not translate), so the ±18 × ±25 box
+// always covers the player. Crucially, NOT translating the emitter when the
+// skier presses A/D means each flake keeps its world-space velocity, so the
+// snow stops feeling like it's stapled to the camera.
+export function updateBlizzard(delta, blizzardFactor, windX) {
+    snowflakeMat.opacity = blizzardFactor;
+    blizzardEmitter.visible = blizzardFactor > 0.01;
+    if (!blizzardEmitter.visible) return;
+
+    for (const flake of blizzardSprites) {
+        const u = flake.userData;
+        flake.position.y -= u.fallSpeed * delta;
+        flake.position.x += windX * u.driftScale * delta;
+
+        // Wrap to the opposite face when a flake leaves the active box.
+        // Keeps the pool full without per-frame allocations.
+        if (flake.position.y < BLIZZARD_BOX_Y_MIN) {
+            flake.position.y = BLIZZARD_BOX_Y_MAX;
+            flake.position.x = rand(-BLIZZARD_BOX_X, BLIZZARD_BOX_X);
+            flake.position.z = rand(-BLIZZARD_BOX_Z, BLIZZARD_BOX_Z);
+        } else if (flake.position.x > BLIZZARD_BOX_X) {
+            flake.position.x = -BLIZZARD_BOX_X;
+        } else if (flake.position.x < -BLIZZARD_BOX_X) {
+            flake.position.x = BLIZZARD_BOX_X;
+        }
+    }
+}
+
+
+// ============================================================
+//  WIND STREAK TUBES (in-world wind direction indicator)
+// ============================================================
+// Each streak is a Group of two thin tube meshes built with TubeGeometry
+// sweeping a CatmullRomCurve3. TubeGeometry is real 3D geometry (covered in
+// ICG_06 Geometric_Modeling, sweep variants appear in Three_js_06), so the
+// tubes have honest world-space depth and perspective instead of the
+// camera-locked, decal-like read that Sprites produce. Two stacked tubes per
+// streak give a multi-strand wisp similar to the reference imagery.
+
+const WIND_STREAK_COUNT          = 16;
+const WIND_STREAK_TUBE_LAYERS    = 2;
+const WIND_STREAK_LENGTH         = 9.0;
+const WIND_STREAK_RADIUS         = 0.075;
+const WIND_STREAK_TUBULAR_SEGS   = 32;
+const WIND_STREAK_RADIAL_SEGS    = 5;
+
+const WIND_STREAK_SPAWN_X_OFFSET = 24;
+const WIND_STREAK_SPAWN_Y_MIN    = 0.6;
+const WIND_STREAK_SPAWN_Y_MAX    = 4.6;
+const WIND_STREAK_SPAWN_Z_HALF   = 28;
+const WIND_STREAK_SPEED_MIN      = 18;
+const WIND_STREAK_SPEED_MAX      = 28;
+const WIND_STREAK_LIFE_MIN       = 1.1;
+const WIND_STREAK_LIFE_MAX       = 1.9;
+
+function makeWindStreakTubeTexture() {
+    const w = 256;
+    const h = 16;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    // Texture is uniform vertically; only U (along the tube) varies, fading
+    // both ends so each tube tapers to nothing instead of showing a hard cap
+    const gradient = ctx.createLinearGradient(0, 0, w, 0);
+    gradient.addColorStop(0.00, 'rgba(255,255,255,0)');
+    gradient.addColorStop(0.28, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.72, 'rgba(255,255,255,1)');
+    gradient.addColorStop(1.00, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    return tex;
+}
+
+const WIND_STREAK_TEXTURE = makeWindStreakTubeTexture();
+
+const windStreakEmitter = new THREE.Group();
+const windStreaks = [];
+
+function buildWindStreakUnit(seed) {
+    const group = new THREE.Group();
+
+    // One material shared by both tubes of the unit so the layers fade in
+    // lock-step; a per-unit clone keeps each streak's opacity independent
+    const material = new THREE.MeshBasicMaterial({
+        map: WIND_STREAK_TEXTURE,
+        color: 0xffffff,
+        transparent: true,
+        depthWrite: false,
+        fog: true,
+        opacity: 0,
+    });
+
+    for (let layer = 0; layer < WIND_STREAK_TUBE_LAYERS; layer++) {
+        // CatmullRomCurve3 through control points along +X with small Y/Z
+        // oscillation gives each tube an organic wisp shape; the seed makes
+        // every streak in the pool look different
+        const points = [];
+        const samples = 7;
+        for (let i = 0; i < samples; i++) {
+            const t = i / (samples - 1);
+            const x = (t - 0.5) * WIND_STREAK_LENGTH;
+            const y = (layer - 0.5) * 0.20
+                    + Math.sin(seed * 1.1 + layer * 0.9 + t * 4.2) * 0.16;
+            const z = Math.sin(seed * 2.3 + layer * 1.7 + t * 3.1) * 0.12;
+            points.push(new THREE.Vector3(x, y, z));
+        }
+        const curve = new THREE.CatmullRomCurve3(points);
+        // TubeGeometry(path, tubularSegments, radius, radialSegments, closed)
+        const geometry = new THREE.TubeGeometry(
+            curve,
+            WIND_STREAK_TUBULAR_SEGS,
+            WIND_STREAK_RADIUS,
+            WIND_STREAK_RADIAL_SEGS,
+            false
+        );
+        const tube = new THREE.Mesh(geometry, material);
+        group.add(tube);
+    }
+
+    group.userData = {
+        active: false,
+        life: 0,
+        lifeMax: 1,
+        vx: 0,
+        peakOpacity: 0.7,
+        material,
+    };
+    return group;
+}
+
+for (let i = 0; i < WIND_STREAK_COUNT; i++) {
+    const unit = buildWindStreakUnit(i * 1.731 + 0.5);
+    unit.visible = false;
+    windStreakEmitter.add(unit);
+    windStreaks.push(unit);
+}
+
+export function getWindStreakEmitter() {
+    return windStreakEmitter;
+}
+
+// Activates one free streak around (anchorX, anchorZ), travelling along
+// world X in `direction` (+1 / -1). The tube was built sweeping +X so a
+// direction of -1 flips it via rotation.y = π. Magnitude in [0, 1] scales
+// the peak opacity so weak moments of a gust read as thinner wisps.
+export function spawnWindStreak(anchorX, anchorZ, direction, magnitude) {
+    let unit = null;
+    for (const u of windStreaks) {
+        if (!u.userData.active) { unit = u; break; }
+    }
+    if (!unit) return;
+
+    const offsetX = (Math.random() - 0.5) * 14;
+    const offsetZ = (Math.random() - 0.5) * 2 * WIND_STREAK_SPAWN_Z_HALF;
+    const y       = rand(WIND_STREAK_SPAWN_Y_MIN, WIND_STREAK_SPAWN_Y_MAX);
+    const startX  = anchorX + offsetX - direction * WIND_STREAK_SPAWN_X_OFFSET;
+
+    unit.position.set(startX, y, anchorZ + offsetZ);
+    // Small roll on Z so streaks are not perfectly horizontal; Y rotation
+    // flips the tube to follow a -X gust
+    unit.rotation.set(0, direction > 0 ? 0 : Math.PI, (Math.random() - 0.5) * 0.12);
+
+    const scaleVar = 0.85 + Math.random() * 0.45;
+    unit.scale.set(scaleVar, scaleVar, scaleVar);
+
+    const u = unit.userData;
+    u.active      = true;
+    u.life        = 0;
+    u.lifeMax     = rand(WIND_STREAK_LIFE_MIN, WIND_STREAK_LIFE_MAX);
+    u.vx          = direction * rand(WIND_STREAK_SPEED_MIN, WIND_STREAK_SPEED_MAX);
+    u.peakOpacity = (0.60 + Math.random() * 0.25) * Math.max(0.5, magnitude);
+
+    unit.visible = true;
+}
+
+// Deactivates all weather sprites so a restart never inherits airborne
+// streaks or flakes from the previous run. Called from scene.js' restart
+// path; the next tick of updateBlizzard / updateWindStreaks naturally
+// rebuilds whatever is appropriate for the new game state.
+export function resetBlizzard() {
+    snowflakeMat.opacity = 0;
+    blizzardEmitter.visible = false;
+    for (const unit of windStreaks) {
+        unit.userData.active = false;
+        unit.userData.life = 0;
+        unit.userData.material.opacity = 0;
+        unit.visible = false;
+    }
+}
+
+// Advances every active streak, ramps opacity through a fade-in / fade-out
+// envelope, deactivates streaks whose life is up. blizzardFactor is folded
+// in so streaks dissolve along with the rest of the storm.
+export function updateWindStreaks(delta, blizzardFactor) {
+    for (const unit of windStreaks) {
+        if (!unit.userData.active) continue;
+        const u = unit.userData;
+        u.life += delta;
+        const t = u.life / u.lifeMax;
+        if (t >= 1) {
+            u.active = false;
+            unit.visible = false;
+            u.material.opacity = 0;
+            continue;
+        }
+        unit.position.x += u.vx * delta;
+        // Triangular envelope: ramp up over first 25%, ramp down over rest
+        const fade = t < 0.25 ? (t / 0.25) : (1 - (t - 0.25) / 0.75);
+        u.material.opacity = u.peakOpacity * fade * blizzardFactor;
+    }
+}
+
+
 export function updateFireflies(chunks, time, nightFactor) {
     fireflyMat.opacity = nightFactor;
     fireflyHaloMat.opacity = nightFactor * 0.85;
