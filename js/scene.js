@@ -4,7 +4,8 @@ import {
     poseSkierForCrash, releaseSkierEquipment,
     resetSkierEquipment, resetSkierPose,
     updateReleasedEquipment,
-    applySkierTuckPose, applySkierSnowplowPose
+    applySkierTuckPose, applySkierSnowplowPose,
+    animateSkierIdle
 } from './skier.js';
 import {
     createTerrain, updateTerrain,
@@ -125,6 +126,7 @@ const AVALANCHE_FALL_PUSH       = 6.0;
 const AVALANCHE_FALL_DROP       = 9.0;
 const AVALANCHE_FALL_PITCH      = 1.1;
 
+
 // ---- Speed lines (2D canvas overlay above the WebGL viewport) ----
 const SPEED_LINE_COUNT          = 28;
 const SPEED_LINE_THRESHOLD_LO   = 80;    // no streaks below 80 m/s
@@ -153,10 +155,13 @@ const SPEED_LINE_SPEED_MUL_MAX  = 1.30;
 let score     = 0;
 let elapsed   = 0;
 let gameSpeed = SPEED_INITIAL;
-// 'menu' -> 'playing' -> 'falling'? -> 'gameover'
-// fallMode picks edge / collision / avalanche behaviour during 'falling'
+// 'menu' -> 'intro' -> 'playing' -> 'falling'? -> 'gameover'
+// 'intro' is a short camera pan during which the skier is already skiing;
+// gameplay input only enables when it ends.
 let gameState = 'menu';
 let lastTime  = performance.now();
+let introTimer = 0;
+const INTRO_PAN_DURATION = 1.5;
 
 // Falling state (only meaningful while gameState === 'falling')
 let fallTimer  = 0;
@@ -683,11 +688,13 @@ const menu = createMenu({
 // ============================================================
 
 document.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = true;
-    if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
-    if (e.code === 'KeyW' || e.code === 'ArrowUp')    keys.boost = true;
-    if (e.code === 'KeyS' || e.code === 'ArrowDown')  keys.brake = true;
-    if (e.code === 'KeyT') { camMode = (camMode + 1) % 3; }
+    if (gameState === 'playing') {
+        if (e.code === 'KeyA' || e.code === 'ArrowLeft')  keys.left  = true;
+        if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
+        if (e.code === 'KeyW' || e.code === 'ArrowUp')    keys.boost = true;
+        if (e.code === 'KeyS' || e.code === 'ArrowDown')  keys.brake = true;
+        if (e.code === 'KeyT') { camMode = (camMode + 1) % 3; }
+    }
     if (e.code === 'Space' && gameState === 'menu')     startGame();
     if (e.code === 'KeyR'  && gameState === 'gameover') restartGame();
 });
@@ -894,10 +901,44 @@ function keepCrashBodyAboveSnow() {
 
 
 function startGame() {
-    gameState = 'playing';
-    lastTime  = performance.now();
+    // Enter the short pan state. The skier starts skiing immediately so the
+    // handoff into 'playing' just unlocks input — no jarring start.
+    gameState = 'intro';
+    introTimer = 0;
+    lastTime   = performance.now();
     menu.hide();
+    avalanche.visible = true;
+    skier.position.set(0, 0.012, 0);
+    skier.rotation.set(0, 0, 0);
+    elapsed = 0;
+    score = 0;
+    gameSpeed = SPEED_INITIAL;
+    bonusSpeed = 0;
+    boostAmount = 0;
+    brakeAmount = 0;
+    boostHoldTime = 0;
+    avalancheGap = GAP_DEFAULT;
+    camMode = 0;
+    keys.left = keys.right = keys.boost = keys.brake = false;
     hud.style.display = 'block';
+}
+
+function startMenuMode() {
+    gameState = 'menu';
+    introTimer = 0;
+    avalanche.visible = false;
+    keys.left = keys.right = keys.boost = keys.brake = false;
+    skier.position.set(0, 0.012, 0);
+    skier.rotation.set(0, 0, 0);
+    resetSkierPose();
+    resetSkierEquipment();
+    hud.style.display = 'none';
+    menu.show();
+    // Low front-right preview: skier silhouettes against the sky, framed
+    // on screen right so the menu pill doesn't clash with the model
+    camera.position.set(3.0, 1.0, 3.5);
+    camLook.set(-1.8, 1.4, 0);
+    camera.lookAt(camLook);
 }
 
 
@@ -972,10 +1013,8 @@ function restartGame() {
 
 function returnToMenu() {
     resetWorld();
-    gameState = 'menu';
     hideGameOverOverlay();
-    hud.style.display = 'none';
-    menu.show();
+    startMenuMode();
 }
 
 
@@ -1035,8 +1074,25 @@ function animate(now) {
     const blizzardSmooth = 1 - Math.exp(-BLIZZARD_BLEND_RATE * delta);
     blizzardFactor += (blizzardTarget - blizzardFactor) * blizzardSmooth;
 
+    // -- Menu: skier idling at gameplay start, framed on the right --
+    if (gameState === 'menu') {
+        animateSkierIdle(now * 0.001);
+    }
+    // -- Intro: short camera pan, skier already skiing for a clean pickup --
+    else if (gameState === 'intro') {
+        introTimer += delta;
+        // Live world: terrain scrolls, skier animates, but no score/input
+        gameSpeed = SPEED_INITIAL;
+        updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
+        animateSkier(introTimer, { boost: 0, brake: 0 });
+        if (introTimer >= INTRO_PAN_DURATION) {
+            gameState = 'playing';
+            elapsed = 0;
+            lastTime = performance.now();
+        }
+    }
     // -- Game update (only while playing) --
-    if (gameState === 'playing') {
+    else if (gameState === 'playing') {
         elapsed  += delta;
 
         // Snowplow (S) overrides tuck (W), so S held collapses boostTarget to 0
@@ -1293,7 +1349,11 @@ function animate(now) {
     const speedFactor = Math.min(1, Math.max(0, (gameSpeed - SPEED_INITIAL) / 50));
     let targetPos, targetLook;
 
-    if (camMode === 0) {
+    if (gameState === 'menu') {
+        // Low front-right: skier silhouettes against the sky
+        targetPos  = { x: 3.0, y: 1.0, z: 3.5 };
+        targetLook = { x: -1.8, y: 1.4, z: 0 };
+    } else if (gameState === 'intro' || camMode === 0) {
         // Behind
         targetPos  = { x: skier.position.x * 0.85,
                        y: 3.0 + speedFactor * 1.0,
@@ -1326,4 +1386,5 @@ function animate(now) {
     renderer.render(scene, camera);
 }
 
+startMenuMode();
 requestAnimationFrame(animate);

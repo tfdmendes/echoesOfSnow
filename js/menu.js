@@ -1,17 +1,10 @@
 const STYLE_ID = 'menu-styles';
-const MENU_SNOWFLAKE_COUNT = 35;
 
 function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-        @keyframes snowfall {
-            0%   { transform: translateY(-10vh) rotate(0deg); opacity: 0; }
-            10%  { opacity: 1; }
-            90%  { opacity: 0.8; }
-            100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
-        }
         @keyframes snowflakeSpin {
             from { transform: rotate(0deg); }
             to   { transform: rotate(360deg); }
@@ -68,7 +61,7 @@ function timeLabelFor(t) {
 
 function buildTitle() {
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex; flex-direction:column; align-items:center;';
+    wrap.style.cssText = 'display:flex; flex-direction:column; align-items:flex-start;';
 
     const line1 = document.createElement('div');
     line1.style.cssText =
@@ -96,12 +89,18 @@ function buildTitle() {
 function buildMainScreen(handlers) {
     const screen = document.createElement('div');
     screen.style.cssText =
-        'display:flex; flex-direction:column; align-items:center;';
+        'display:flex; flex-direction:column; align-items:flex-start;' +
+        'pointer-events:none;';
 
     screen.appendChild(buildTitle());
 
     const buttons = document.createElement('div');
-    buttons.style.cssText = 'margin-top:48px;';
+    buttons.style.cssText =
+        'margin-top:48px; padding:24px 28px;' +
+        'background:rgba(10,14,28,0.35);' +
+        'backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);' +
+        'border-radius:12px;' +
+        'pointer-events:auto;';
 
     const playBtn = document.createElement('button');
     playBtn.className = 'menu-btn menu-btn-primary';
@@ -127,8 +126,9 @@ function buildMainScreen(handlers) {
     hint.style.cssText =
         'position:absolute; bottom:32px; left:0; right:0;' +
         'font-family:monospace; font-size:clamp(10px,1.4vw,14px);' +
-        'color:#7890a8; opacity:0.6; letter-spacing:2px;' +
-        'text-align:center; user-select:none;';
+        'color:#7890a8; opacity:0.7; letter-spacing:2px;' +
+        'text-align:center; user-select:none; pointer-events:none;' +
+        'text-shadow:0 1px 3px rgba(0,0,0,0.6);';
     hint.innerHTML =
         'A / &#8592; &mdash; Left &nbsp;&nbsp;&nbsp;' +
         'D / &#8594; &mdash; Right &nbsp;&nbsp;&nbsp;' +
@@ -143,7 +143,8 @@ function buildMainScreen(handlers) {
 function buildSettingsScreen({ getStartCycleOffset, setStartCycleOffset, onBack }) {
     const screen = document.createElement('div');
     screen.style.cssText =
-        'display:flex; flex-direction:column; align-items:center; width:min(420px,90vw);';
+        'display:flex; flex-direction:column; align-items:flex-start;' +
+        'width:min(420px,90vw); pointer-events:auto;';
 
     const back = document.createElement('div');
     back.className = 'menu-back';
@@ -190,7 +191,8 @@ function buildSettingsScreen({ getStartCycleOffset, setStartCycleOffset, onBack 
 function buildShopScreen({ onBack }) {
     const screen = document.createElement('div');
     screen.style.cssText =
-        'display:flex; flex-direction:column; align-items:center; width:min(420px,90vw);';
+        'display:flex; flex-direction:column; align-items:flex-start;' +
+        'width:min(420px,90vw); pointer-events:auto;';
 
     const back = document.createElement('div');
     back.className = 'menu-back';
@@ -215,24 +217,6 @@ function buildShopScreen({ onBack }) {
     return screen;
 }
 
-function spawnSnowflakes(parent) {
-    for (let i = 0; i < MENU_SNOWFLAKE_COUNT; i++) {
-        const flake = document.createElement('div');
-        const size     = 6 + Math.random() * 14;
-        const opacity  = 0.1 + Math.random() * 0.25;
-        const duration = 6 + Math.random() * 12;
-        const delay    = Math.random() * duration;
-        flake.textContent = '❄';
-        flake.style.cssText =
-            'position:absolute; pointer-events:none;' +
-            'color:rgba(200,220,255,' + opacity + ');' +
-            'font-size:' + size + 'px;' +
-            'left:' + (Math.random() * 100) + '%;' +
-            'animation:snowfall ' + duration + 's linear ' + delay + 's infinite;';
-        parent.appendChild(flake);
-    }
-}
-
 export function createMenu({
     onPlay,
     getStartCycleOffset,
@@ -243,11 +227,10 @@ export function createMenu({
     const overlay = document.createElement('div');
     overlay.style.cssText =
         'position:fixed; inset:0; display:flex; flex-direction:column;' +
-        'align-items:center; justify-content:center;' +
-        'background:linear-gradient(180deg, rgba(10,12,30,0.88) 0%, rgba(20,35,70,0.78) 100%);' +
-        'z-index:30; overflow:hidden; transition:opacity 0.8s;';
-
-    spawnSnowflakes(overlay);
+        'align-items:flex-start; justify-content:center;' +
+        'padding-left:16vw; box-sizing:border-box;' +
+        'z-index:30; overflow:hidden; transition:opacity 0.8s;' +
+        'pointer-events:none;';
 
     const screens = {
         main:     null,
@@ -285,12 +268,12 @@ export function createMenu({
     return {
         show() {
             overlay.style.opacity = '1';
-            overlay.style.pointerEvents = 'auto';
+            overlay.style.visibility = 'visible';
             showScreen('main');
         },
         hide() {
             overlay.style.opacity = '0';
-            overlay.style.pointerEvents = 'none';
+            overlay.style.visibility = 'hidden';
         },
     };
 }

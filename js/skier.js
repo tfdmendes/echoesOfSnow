@@ -610,3 +610,130 @@ export function poseSkierForCrash(progress, side) {
     leftForearmGroup.rotation.x = lerp(BASE_FOREARM_X, -0.12, t);
     rightForearmGroup.rotation.x = lerp(BASE_FOREARM_X, -0.12, t);
 }
+
+// Smooth in/out envelope for a beat that starts and ends at 0
+function beatEnvelope(t) {
+    return 0.5 - 0.5 * Math.cos(Math.PI * 2 * t);
+}
+
+// Low-energy base: breathing, head sway, subtle pole rocking. Always
+// applied; beat blends layer their overrides on top.
+function applyIdleBase(time) {
+    applyBasePose();
+    const fidget = Math.sin(time * 2.5);
+    const breath = Math.sin(time * 1.1);
+
+    upperBodyGroup.position.y = WAIST_Y + 0.008 * breath;
+    upperBodyGroup.rotation.x = 0.18 + 0.015 * breath;
+    headGroup.rotation.x = -0.10 + 0.012 * Math.sin(time * 0.9);
+    headGroup.rotation.y = 0.04 * Math.sin(time * 0.6);
+
+    leftForearmGroup.rotation.x = -0.48 + 0.045 * fidget;
+    rightForearmGroup.rotation.x = -0.48 - 0.045 * fidget;
+    leftPoleGroup.rotation.x = 0.42 - 0.060 * fidget;
+    rightPoleGroup.rotation.x = 0.42 + 0.060 * fidget;
+}
+
+
+function beatOverheadStretch(localT) {
+    const env = beatEnvelope(localT);
+    leftArmGroup.rotation.x = lerp(-0.36, -2.60, env);
+    rightArmGroup.rotation.x = lerp(-0.36, -2.60, env);
+    leftArmGroup.rotation.z = lerp(-0.18, -0.05, env);
+    rightArmGroup.rotation.z = lerp(0.18, 0.05, env);
+    leftForearmGroup.rotation.x = lerp(-0.48, -0.10, env);
+    rightForearmGroup.rotation.x = lerp(-0.48, -0.10, env);
+    leftPoleGroup.rotation.x = lerp(0.42, -1.30, env);
+    rightPoleGroup.rotation.x = lerp(0.42, -1.30, env);
+    upperBodyGroup.rotation.x = lerp(0.18, -0.10, env);
+    headGroup.rotation.x = lerp(-0.10, -0.34, env);
+    upperBodyGroup.position.y = WAIST_Y + 0.04 * env;
+}
+
+
+function beatGogglesAdjust(localT) {
+    const env = beatEnvelope(localT);
+    rightArmGroup.rotation.x = lerp(-0.36, -1.15, env);
+    rightArmGroup.rotation.z = lerp(0.18, 0.55, env);
+    rightForearmGroup.rotation.x = lerp(-0.48, -1.45, env);
+    headGroup.rotation.x = lerp(-0.10, 0.05, env * 0.7);
+    rightPoleGroup.rotation.x = lerp(0.42, -0.40, env);
+}
+
+
+function beatLookAround(localT) {
+    let yAngle;
+    if (localT < 0.5) {
+        yAngle = -Math.sin(localT / 0.5 * Math.PI) * 0.85;
+    } else {
+        yAngle =  Math.sin((localT - 0.5) / 0.5 * Math.PI) * 0.85;
+    }
+    headGroup.rotation.y = yAngle;
+    upperBodyGroup.rotation.y = yAngle * 0.25;
+}
+
+
+function beatPoleTaps(localT) {
+    const outer = beatEnvelope(localT);
+    const taps  = Math.sin(localT * Math.PI * 6);
+    const amp   = taps * outer;
+
+    leftForearmGroup.rotation.x  = -0.48 + amp * 0.18;
+    rightForearmGroup.rotation.x = -0.48 - amp * 0.18;
+    leftPoleGroup.rotation.x     = 0.42 + amp * 0.30;
+    rightPoleGroup.rotation.x    = 0.42 - amp * 0.30;
+    const dip = Math.abs(amp) * 0.05;
+    leftKneeGroup.rotation.x  = 0.58 + dip;
+    rightKneeGroup.rotation.x = 0.58 + dip;
+    upperBodyGroup.position.y = WAIST_Y - dip * 0.6;
+}
+
+const IDLE_BEATS = [
+    { name: 'stretch', duration: 3.0, fn: beatOverheadStretch },
+    { name: 'goggles', duration: 1.5, fn: beatGogglesAdjust   },
+    { name: 'look',    duration: 2.0, fn: beatLookAround      },
+    { name: 'taps',    duration: 2.0, fn: beatPoleTaps        },
+];
+const IDLE_GAP_MIN = 2.5;
+const IDLE_GAP_MAX = 5.0;
+
+let idleNextBeatTime = -1;
+let idleActiveBeat   = null;
+let idleBeatStart    = 0;
+let idleLastBeatName = null;
+
+function pickRandomBeat() {
+    const pool = IDLE_BEATS.filter(b => b.name !== idleLastBeatName);
+    return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function scheduleNextBeat(time) {
+    idleNextBeatTime = time + IDLE_GAP_MIN + Math.random() * (IDLE_GAP_MAX - IDLE_GAP_MIN);
+}
+
+export function animateSkierIdle(time) {
+    poseTime = time;
+    applyIdleBase(time);
+
+    if (idleNextBeatTime < 0) {
+        scheduleNextBeat(time);
+    }
+
+    if (idleActiveBeat) {
+        const localT = (time - idleBeatStart) / idleActiveBeat.duration;
+        if (localT < 1) {
+            idleActiveBeat.fn(localT);
+            return;
+        }
+        idleLastBeatName = idleActiveBeat.name;
+        idleActiveBeat   = null;
+        scheduleNextBeat(time);
+    }
+
+    if (time >= idleNextBeatTime) {
+        idleActiveBeat = pickRandomBeat();
+        idleBeatStart  = time;
+        idleActiveBeat.fn(0);
+    }
+}
+
