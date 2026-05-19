@@ -31,6 +31,7 @@ export const BIOMES = {
         spawnChance: 0.90,
         chunkSpan: 4,
         densityMultiplier: 1.0,
+        coinDensityMultiplier: 1.0,
         minSpacing: 3.5,
         weights: {
             tree: 0.28, rock: 0.13, snowman: 0.13, fallenLog: 0.13,
@@ -46,6 +47,7 @@ export const BIOMES = {
         spawnChance: 0.25,
         chunkSpan: 20,
         densityMultiplier: 3.5,
+        coinDensityMultiplier: 0.8,
         minSpacing: 2.1,
         weights: {
             tree: 0.78, rock: 0.05, snowman: 0.00, fallenLog: 0.10,
@@ -61,6 +63,7 @@ export const BIOMES = {
         spawnChance: 0.10,
         chunkSpan: 10,
         densityMultiplier: 0.7,
+        coinDensityMultiplier: 1.4,
         minSpacing: 3.8,
         weights: {
             tree: 0.18, rock: 0.30, snowman: 0.04, fallenLog: 0.20,

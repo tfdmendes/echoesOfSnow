@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createCircleCollider, createOrientedBoxCollider } from './collision.js';
 import { getBiome, BIOME_BASE, BIOME_FOREST } from './biomes.js';
+import { populateChunkCoins, clearChunkCoins } from './coins.js';
 
 const EDGE_MARGIN = 2.0;
 
@@ -1087,6 +1088,8 @@ export function populateChunk(chunkGroup, chunkLength, chunkWidth, score, isNigh
     if (biomeName === BIOME_FOREST) {
         spawnFireflies(chunkGroup, chunkLength, chunkWidth);
     }
+
+    populateChunkCoins(chunkGroup, chunkLength, chunkWidth, biomeName);
 }
 
 
@@ -1104,6 +1107,8 @@ export function clearChunk(chunkGroup) {
     }
     chunkGroup.userData.fireflies = [];
     chunkGroup.userData.fireflyLightLocal = null;
+
+    clearChunkCoins(chunkGroup);
 }
 
 

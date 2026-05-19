@@ -27,6 +27,14 @@ import {
     BIOME_BASE, BIOME_BLIZZARD
 } from './biomes.js';
 import { createMenu } from './menu.js';
+import {
+    loadSave as loadCoinSave,
+    updateCoins, checkCoinPickup,
+    getWallet, getRunCoins,
+    resetRunCoins, commitRunToWallet
+} from './coins.js';
+
+loadCoinSave();
 
 
 // ============================================================
@@ -680,6 +688,7 @@ const menu = createMenu({
     onPlay: () => startGame(),
     getStartCycleOffset: () => startCycleOffset,
     setStartCycleOffset: (t) => { startCycleOffset = t; },
+    getWallet,
 });
 
 
@@ -815,8 +824,11 @@ function updateWindGust(delta, biome) {
 
 function showGameOver() {
     gameState = 'gameover';
-    document.getElementById('go-score').textContent =
-        'Score: ' + Math.floor(score) + ' m';
+    const banked = commitRunToWallet();
+    document.getElementById('go-score').innerHTML =
+        'Score: ' + Math.floor(score) + ' m' +
+        '<br><span style="color:#a8cce8;">&#10052;</span> ' +
+        banked + ' collected &nbsp;&middot;&nbsp; wallet: ' + getWallet();
     overlay.style.opacity = '1';
     overlay.style.pointerEvents = 'auto';
 }
@@ -921,6 +933,7 @@ function startGame() {
     camMode = 0;
     keys.left = keys.right = keys.boost = keys.brake = false;
     hud.style.display = 'block';
+    resetRunCoins();
 }
 
 function startMenuMode() {
@@ -985,6 +998,8 @@ function resetWorld() {
             populateChunk(chunks[i], CHUNK_LENGTH, CHUNK_WIDTH, score, isNightTime(), biomeName);
         }
     }
+
+    resetRunCoins();
 
     blizzardFactor = 0;
     windGust.mode = 'calm';
@@ -1164,12 +1179,16 @@ function animate(now) {
                 beginCollisionFall(collision);
             } else if (avalancheGap <= GAP_DEATH) {
                 beginAvalancheFall();
+            } else {
+                checkCoinPickup(skier.position, chunks);
             }
         }
 
         hud.innerHTML =
             'Score: ' + Math.floor(score) + ' m<br>' +
-            'Speed: ' + gameSpeed.toFixed(1) + ' m/s';
+            'Speed: ' + gameSpeed.toFixed(1) + ' m/s<br>' +
+            '<span style="color:#a8cce8; text-shadow:0 0 8px rgba(168,204,232,0.7);">&#10052;</span> ' +
+            getRunCoins();
     }
     // -- Falling: edge slip, obstacle crash, or avalanche overrun --
     else if (gameState === 'falling') {
@@ -1276,6 +1295,8 @@ function animate(now) {
 
     // Inverse of the sun: 0 by day, 1 once the sun drops below ~0.5 intensity
     const nightFactor = Math.max(0, 1.0 - sunLight.intensity / 0.5);
+
+    updateCoins(chunks, now * 0.001, nightFactor);
 
     // Emissive fades in sync with the pool lights so visual glow and
     // illumination always agree

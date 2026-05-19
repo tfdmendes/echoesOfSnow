@@ -221,6 +221,7 @@ export function createMenu({
     onPlay,
     getStartCycleOffset,
     setStartCycleOffset,
+    getWallet,
 }) {
     injectStyles();
 
@@ -231,6 +232,26 @@ export function createMenu({
         'padding-left:16vw; box-sizing:border-box;' +
         'z-index:30; overflow:hidden; transition:opacity 0.8s;' +
         'pointer-events:none;';
+
+    const walletChip = document.createElement('div');
+    walletChip.style.cssText =
+        'position:absolute; top:24px; right:24px;' +
+        'font-family:sans-serif; font-size:15px; letter-spacing:3px;' +
+        'color:#e4edf5; padding:10px 16px;' +
+        'background:rgba(10,14,28,0.55);' +
+        'border:1px solid rgba(168,204,232,0.35); border-radius:6px;' +
+        'backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);' +
+        'user-select:none; pointer-events:none;';
+    overlay.appendChild(walletChip);
+    function refreshWallet() {
+        const n = getWallet ? getWallet() : 0;
+        walletChip.innerHTML =
+            '<span style="display:inline-block; color:#a8cce8;' +
+            'animation:snowflakeSpin 10s linear infinite;' +
+            'text-shadow:0 0 10px rgba(168,204,232,0.7); margin-right:8px;">&#10052;</span>' +
+            n;
+    }
+    refreshWallet();
 
     const screens = {
         main:     null,
@@ -269,6 +290,7 @@ export function createMenu({
         show() {
             overlay.style.opacity = '1';
             overlay.style.visibility = 'visible';
+            refreshWallet();
             showScreen('main');
         },
         hide() {
