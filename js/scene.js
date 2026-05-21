@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
     skier, animateSkier,
+    getSkiTrailContacts,
     poseSkierForCrash, releaseSkierEquipment,
     resetSkierEquipment, resetSkierPose,
     updateReleasedEquipment,
@@ -11,6 +12,7 @@ import {
     createTerrain, updateTerrain,
     CHUNK_LENGTH, CHUNK_WIDTH, PLAY_HALF_X, SLOPE_TILT
 } from './terrain.js';
+import { createSnowTrails } from './snow-trails.js';
 import {
     populateChunk, clearChunk,
     lanternMat, lamppostBulbMat,
@@ -488,11 +490,13 @@ function updateCycle(normalizedTime) {
 // hovering above the snow once the tilt was applied
 const skierMount = new THREE.Group();
 skierMount.rotation.x = SLOPE_TILT;
-skierMount.position.y = -0.04;
+skierMount.position.y = -0.07;
 skierMount.add(skier);
 scene.add(skierMount);
 
 const chunks = createTerrain(scene);
+const snowTrails = createSnowTrails(chunks);
+const skiTrailContacts = [];
 
 for (let i = 0; i < chunks.length; i++) {
     const biomeName = (i < SAFE_CHUNKS) ? BIOME_BASE : getBiomeForNextChunk(SPEED_INITIAL);
@@ -740,6 +744,7 @@ function isNightTime() {
 
 function onChunkRecycle(chunk) {
     clearChunk(chunk);
+    snowTrails.clearChunk(chunk);
     const biomeName = getBiomeForNextChunk(gameSpeed);
     populateChunk(chunk, CHUNK_LENGTH, CHUNK_WIDTH, score, isNightTime(), biomeName);
 }
@@ -824,6 +829,7 @@ function updateWindGust(delta, biome) {
 
 function showGameOver() {
     gameState = 'gameover';
+    snowTrails.pause();
     const banked = commitRunToWallet();
     document.getElementById('go-score').innerHTML =
         'Score: ' + Math.floor(score) + ' m' +
@@ -835,6 +841,7 @@ function showGameOver() {
 
 function beginEdgeFall() {
     gameState = 'falling';
+    snowTrails.pause();
     fallMode  = 'edge';
     fallTimer = 0;
     fallVelY  = 0;
@@ -855,6 +862,7 @@ function beginCollisionFall(collision) {
         : (skier.rotation.z >= 0 ? 1 : -1);
 
     gameState = 'falling';
+    snowTrails.pause();
     fallMode  = 'collision';
     fallTimer = 0;
     fallDir   = impactSide;
@@ -887,6 +895,7 @@ function beginCollisionFall(collision) {
 // pitched forward as if hit from behind and the cloud catches up
 function beginAvalancheFall() {
     gameState = 'falling';
+    snowTrails.pause();
     fallMode  = 'avalanche';
     fallTimer = 0;
     fallDir   = 0;
@@ -933,6 +942,7 @@ function startGame() {
     camMode = 0;
     keys.left = keys.right = keys.boost = keys.brake = false;
     hud.style.display = 'block';
+    snowTrails.reset();
     resetRunCoins();
 }
 
@@ -941,6 +951,7 @@ function startMenuMode() {
     introTimer = 0;
     avalanche.visible = false;
     keys.left = keys.right = keys.boost = keys.brake = false;
+    snowTrails.pause();
     skier.position.set(0, 0.012, 0);
     skier.rotation.set(0, 0, 0);
     resetSkierPose();
@@ -960,6 +971,7 @@ function resetWorld() {
     skier.rotation.set(0, 0, 0);
     resetSkierPose();
     resetSkierEquipment();
+    snowTrails.reset();
 
     elapsed   = 0;
     score     = 0;
@@ -1100,6 +1112,7 @@ function animate(now) {
         gameSpeed = SPEED_INITIAL;
         updateTerrain(chunks, gameSpeed, delta, onChunkRecycle);
         animateSkier(introTimer, { boost: 0, brake: 0 });
+        snowTrails.update(getSkiTrailContacts(skiTrailContacts), 0);
         if (introTimer >= INTRO_PAN_DURATION) {
             gameState = 'playing';
             elapsed = 0;
@@ -1168,6 +1181,7 @@ function animate(now) {
         // Tuck/snowplow biases stack on top of the baseline animateSkier pose
         applySkierTuckPose(boostAmount);
         applySkierSnowplowPose(brakeAmount);
+        snowTrails.update(getSkiTrailContacts(skiTrailContacts), brakeAmount);
 
         // Death checks in priority order: edge slip > obstacle > avalanche
         if (Math.abs(skier.position.x) > PLAY_HALF_X) {

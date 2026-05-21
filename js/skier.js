@@ -308,6 +308,27 @@ function createSkier() {
 
 export const skier = createSkier();
 
+const SKI_TRAIL_CENTER_LOCAL = new THREE.Vector3(0, -0.018, -0.41);
+
+function writeSkiTrailContact(mesh, target) {
+    if (!target.center) target.center = new THREE.Vector3();
+
+    target.center.copy(SKI_TRAIL_CENTER_LOCAL);
+
+    mesh.localToWorld(target.center);
+
+    return target;
+}
+
+export function getSkiTrailContacts(target = []) {
+    skier.updateMatrixWorld(true);
+
+    target[0] = writeSkiTrailContact(leftSkiMesh, target[0] || {});
+    target[1] = writeSkiTrailContact(rightSkiMesh, target[1] || {});
+
+    return target;
+}
+
 const BASE_BODY_LEAN = 0.20;
 const BASE_HIP_FLEX = -0.30;
 const BASE_KNEE_FLEX = 0.58;
@@ -736,4 +757,3 @@ export function animateSkierIdle(time) {
         idleActiveBeat.fn(0);
     }
 }
-
