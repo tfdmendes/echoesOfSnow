@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { TEX, applyMaterialTextures } from './textures.js';
 
 let upperBodyGroup, headGroup;
 let leftLegGroup, rightLegGroup;
@@ -9,7 +10,12 @@ let leftArmGroup, rightArmGroup;
 let leftForearmGroup, rightForearmGroup;
 let leftPoleGroup, rightPoleGroup;
 let leftSkiMesh, rightSkiMesh;
+let leftPlankMesh, rightPlankMesh;
 let leftPoleMesh, rightPoleMesh;
+
+let jacketMat, pantsMat, bootMat, skinMat, skiMat, skiAccentMat, plankMat, poleMat, hatMat, beanieMat, goggleMat, gloveMat;
+const hatVariants = {};
+const goggleVariants = {};
 
 const POLE_LENGTH = 0.75;
 const EQUIPMENT_GRAVITY = 16;
@@ -78,6 +84,8 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
     const shoulder = new THREE.Group();
     shoulder.position.set(0.24 * sign, SHOULDER_Y, 0.02);
 
+    const shoulderCap = mark(new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 8), jacketMat));
+
     const upperArm = mark(new THREE.Mesh(
         new THREE.CylinderGeometry(0.042, 0.038, 0.26, 8),
         jacketMat
@@ -87,11 +95,16 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
     const elbow = new THREE.Group();
     elbow.position.set(0, -0.26, 0);
 
+    const elbowCap = mark(new THREE.Mesh(new THREE.SphereGeometry(0.040, 10, 8), jacketMat));
+
     const forearm = mark(new THREE.Mesh(
         new THREE.CylinderGeometry(0.035, 0.03, 0.25, 8),
         jacketMat
     ));
     forearm.position.y = -0.125;
+
+    const wristCap = mark(new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), jacketMat));
+    wristCap.position.y = -0.25;
 
     const hand = mark(new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), gloveMat));
     hand.position.set(0, -0.25, 0.015);
@@ -124,8 +137,8 @@ function createArm(side, jacketMat, poleMat, gloveMat) {
 
     pole.add(basket, spike);
     polePivot.add(pole);
-    elbow.add(forearm, hand, polePivot);
-    shoulder.add(upperArm, elbow);
+    elbow.add(elbowCap, forearm, wristCap, hand, polePivot);
+    shoulder.add(shoulderCap, upperArm, elbow);
 
     return { shoulder, elbow, polePivot, pole };
 }
@@ -145,6 +158,8 @@ function createLeg(side, pantsMat, bootMat, skiMat, skiAccentMat) {
     const knee = new THREE.Group();
     knee.position.set(0, -0.30, 0);
 
+    const kneeCap = mark(new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 8), pantsMat));
+
     const lowerLeg = mark(new THREE.Mesh(
         new THREE.CylinderGeometry(0.048, 0.042, 0.30, 8),
         pantsMat
@@ -153,6 +168,9 @@ function createLeg(side, pantsMat, bootMat, skiMat, skiAccentMat) {
 
     const ankle = new THREE.Group();
     ankle.position.set(0, -0.30, 0.015);
+
+    const ankleCap = mark(new THREE.Mesh(new THREE.SphereGeometry(0.044, 10, 8), pantsMat));
+    ankleCap.position.z = -0.015;
 
     const boot = mark(new THREE.Mesh(
         new THREE.BoxGeometry(0.10, 0.08, 0.22),
@@ -164,34 +182,34 @@ function createLeg(side, pantsMat, bootMat, skiMat, skiAccentMat) {
     skiPivot.position.set(0, -0.06, 0.035);
 
     const ski = mark(new THREE.Mesh(
-        new THREE.BoxGeometry(0.105, 0.026, 1.18),
+        new THREE.BoxGeometry(0.095, 0.022, 1.05),
         skiMat
     ), true, true);
     ski.name = `${side}-ski`;
     ski.position.set(0, -0.03, 0.07);
 
     const frontTip = mark(new THREE.Mesh(
-        new THREE.BoxGeometry(0.105, 0.022, 0.23),
+        new THREE.BoxGeometry(0.095, 0.020, 0.21),
         skiMat
     ), true, true);
     frontTip.name = `${side}-ski-front-tip`;
-    frontTip.position.set(0, 0.022, 0.68);
+    frontTip.position.set(0, 0.020, 0.605);
     frontTip.rotation.x = -0.52;
 
     const tail = mark(new THREE.Mesh(
-        new THREE.BoxGeometry(0.105, 0.020, 0.11),
+        new THREE.BoxGeometry(0.095, 0.018, 0.10),
         skiMat
     ), true, true);
     tail.name = `${side}-ski-tail`;
-    tail.position.set(0, 0.005, -0.64);
+    tail.position.set(0, 0.005, -0.57);
     tail.rotation.x = 0.14;
 
     const stripe = mark(new THREE.Mesh(
-        new THREE.BoxGeometry(0.032, 0.006, 0.86),
+        new THREE.BoxGeometry(0.029, 0.006, 0.76),
         skiAccentMat
     ));
     stripe.name = `${side}-ski-center-stripe`;
-    stripe.position.set(0, 0.017, 0.02);
+    stripe.position.set(0, 0.015, 0.02);
 
     const binding = mark(new THREE.Mesh(
         new THREE.BoxGeometry(0.086, 0.022, 0.18),
@@ -202,12 +220,22 @@ function createLeg(side, pantsMat, bootMat, skiMat, skiAccentMat) {
 
     ski.add(frontTip, tail, stripe, binding);
 
-    skiPivot.add(ski);
-    ankle.add(boot, skiPivot);
-    knee.add(lowerLeg, ankle);
+    // Alternate plank ski: a single chunky wooden board, no tip/tail/binding.
+    // Hidden by default; the equipped ski "model" toggles visibility.
+    const plank = mark(new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, 0.055, 1.55),
+        plankMat
+    ), true, true);
+    plank.name = `${side}-plank`;
+    plank.position.set(0, -0.024, 0.04);
+    plank.visible = false;
+
+    skiPivot.add(ski, plank);
+    ankle.add(ankleCap, boot, skiPivot);
+    knee.add(kneeCap, lowerLeg, ankle);
     hip.add(upperLeg, knee);
 
-    return { hip, knee, ankle, skiPivot, ski };
+    return { hip, knee, ankle, skiPivot, ski, plank };
 }
 
 function registerEquipment(mesh, homeParent, side, kind) {
@@ -225,19 +253,110 @@ function registerEquipment(mesh, homeParent, side, kind) {
     });
 }
 
+function buildHatVariants() {
+    const beanie = mark(new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+        beanieMat
+    ));
+    beanie.position.set(0, 0.03, 0);
+
+    const helmet = new THREE.Group();
+    const helmetShell = mark(new THREE.Mesh(new THREE.SphereGeometry(0.165, 14, 10), hatMat));
+    helmetShell.position.set(0, 0.005, 0);
+    const helmetVisor = mark(new THREE.Mesh(
+        new THREE.BoxGeometry(0.30, 0.02, 0.04),
+        new THREE.MeshPhongMaterial({ color: 0x111111 })
+    ));
+    helmetVisor.position.set(0, 0.03, 0.12);
+    helmet.add(helmetShell, helmetVisor);
+    helmet.position.set(0, 0, 0);
+
+    const cap = new THREE.Group();
+    const capCrown = mark(new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+        hatMat
+    ));
+    capCrown.position.set(0, 0.03, 0);
+    const capBrim = mark(new THREE.Mesh(
+        new THREE.CylinderGeometry(0.13, 0.13, 0.018, 16, 1, false, -Math.PI / 2, Math.PI),
+        hatMat
+    ));
+    capBrim.position.set(0, 0.03, 0.10);
+    cap.add(capCrown, capBrim);
+
+    const beret = new THREE.Group();
+    const beretBase = mark(new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.14, 0.06, 16),
+        hatMat
+    ));
+    beretBase.position.set(0, 0.08, -0.01);
+    beretBase.rotation.x = -0.18;
+    const beretStem = mark(new THREE.Mesh(
+        new THREE.SphereGeometry(0.018, 6, 6),
+        hatMat
+    ));
+    beretStem.position.set(0, 0.13, -0.04);
+    beret.add(beretBase, beretStem);
+
+    const none = new THREE.Group();
+
+    return { beanie, helmet, cap, beret, none };
+}
+
+function buildGoggleVariants() {
+    const orange = mark(new THREE.Mesh(
+        new THREE.BoxGeometry(0.24, 0.08, 0.08),
+        goggleMat
+    ));
+    orange.position.set(0, 0, 0.11);
+
+    const mirror = mark(new THREE.Mesh(
+        new THREE.BoxGeometry(0.24, 0.08, 0.08),
+        new THREE.MeshPhongMaterial({ color: 0x88ddff, emissive: 0x113355, shininess: 140 })
+    ));
+    mirror.position.set(0, 0, 0.11);
+
+    const sunglasses = new THREE.Group();
+    const lensMat = new THREE.MeshPhongMaterial({ color: 0x111111, shininess: 120 });
+    const leftLens = mark(new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.05, 0.04), lensMat));
+    leftLens.position.set(-0.065, 0, 0.12);
+    const rightLens = mark(new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.05, 0.04), lensMat));
+    rightLens.position.set(0.065, 0, 0.12);
+    const bridge = mark(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.012, 0.03), lensMat));
+    bridge.position.set(0, 0.005, 0.12);
+    sunglasses.add(leftLens, rightLens, bridge);
+
+    const visor = mark(new THREE.Mesh(
+        new THREE.CylinderGeometry(0.135, 0.135, 0.07, 18, 1, true, -Math.PI / 2, Math.PI),
+        new THREE.MeshPhongMaterial({ color: 0x223355, emissive: 0x0a1530, shininess: 140, side: THREE.DoubleSide })
+    ));
+    visor.position.set(0, 0, 0.04);
+
+    const none = new THREE.Group();
+
+    return { orange, mirror, sunglasses, visor, none };
+}
+
 function createSkier() {
     const group = new THREE.Group();
 
-    const jacketMat = new THREE.MeshPhongMaterial({ color: 0xdd2222 });
-    const pantsMat  = new THREE.MeshPhongMaterial({ color: 0x111a33 });
-    const bootMat   = new THREE.MeshPhongMaterial({ color: 0x050505 });
-    const skinMat   = new THREE.MeshPhongMaterial({ color: 0xc79a7a });
-    const skiMat    = new THREE.MeshPhongMaterial({ color: 0x2244aa, shininess: 80 });
-    const skiAccentMat = new THREE.MeshPhongMaterial({ color: 0xeef6ff, shininess: 60 });
-    const poleMat   = new THREE.MeshPhongMaterial({ color: 0x999999, shininess: 100 });
-    const hatMat    = new THREE.MeshPhongMaterial({ color: 0xcc1111 });
-    const goggleMat = new THREE.MeshPhongMaterial({ color: 0xb35a00, emissive: 0x331100 });
-    const gloveMat  = new THREE.MeshPhongMaterial({ color: 0x202020 });
+    jacketMat = new THREE.MeshPhongMaterial({ color: 0xdd2222, shininess: 14 });
+    pantsMat  = new THREE.MeshPhongMaterial({ color: 0x111a33, shininess: 8 });
+    bootMat   = new THREE.MeshPhongMaterial({ color: 0x222222 });
+    skinMat   = new THREE.MeshPhongMaterial({ color: 0xc79a7a });
+    skiMat    = new THREE.MeshPhongMaterial({ color: 0x2244aa, shininess: 80 });
+    skiAccentMat = new THREE.MeshPhongMaterial({ color: 0xeef6ff, shininess: 60 });
+    plankMat  = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 6 });
+    poleMat   = new THREE.MeshPhongMaterial({ color: 0x999999, shininess: 100 });
+    hatMat    = new THREE.MeshPhongMaterial({ color: 0xcc1111, shininess: 10 });
+    beanieMat = new THREE.MeshPhongMaterial({ color: 0xcc1111, shininess: 4 });
+    goggleMat = new THREE.MeshPhongMaterial({ color: 0xb35a00, emissive: 0x331100 });
+    gloveMat  = new THREE.MeshPhongMaterial({ color: 0x202020 });
+
+    applyMaterialTextures(jacketMat, TEX.jacketQuilted);
+    applyMaterialTextures(pantsMat,  TEX.pantsCorduroy);
+    applyMaterialTextures(beanieMat, TEX.woolBoucle);
+    applyMaterialTextures(plankMat,  TEX.bark);
 
     upperBodyGroup = new THREE.Group();
     headGroup = new THREE.Group();
@@ -250,17 +369,18 @@ function createSkier() {
 
     const head = mark(new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8), skinMat), true);
 
-    const hat = mark(new THREE.Mesh(
-        new THREE.SphereGeometry(0.16, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2),
-        hatMat
-    ));
-    hat.position.set(0, 0.03, 0);
+    const hats = buildHatVariants();
+    Object.assign(hatVariants, hats);
 
-    const goggles = mark(new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 0.08), goggleMat));
-    goggles.position.set(0, 0, 0.11);
+    const goggles = buildGoggleVariants();
+    Object.assign(goggleVariants, goggles);
 
     headGroup.position.set(0, 0.52, 0.02);
-    headGroup.add(head, hat, goggles);
+    headGroup.add(head);
+    for (const k in hatVariants)   { hatVariants[k].visible = false; headGroup.add(hatVariants[k]); }
+    for (const k in goggleVariants) { goggleVariants[k].visible = false; headGroup.add(goggleVariants[k]); }
+    hatVariants.beanie.visible = true;
+    goggleVariants.orange.visible = true;
 
     const leftArm = createArm('left', jacketMat, poleMat, gloveMat);
     leftArmGroup     = leftArm.shoulder;
@@ -282,6 +402,7 @@ function createSkier() {
     leftAnkleGroup = leftLeg.ankle;
     leftSkiGroup   = leftLeg.skiPivot;
     leftSkiMesh    = leftLeg.ski;
+    leftPlankMesh  = leftLeg.plank;
 
     const rightLeg = createLeg('right', pantsMat, bootMat, skiMat, skiAccentMat);
     rightLegGroup   = rightLeg.hip;
@@ -289,15 +410,18 @@ function createSkier() {
     rightAnkleGroup = rightLeg.ankle;
     rightSkiGroup   = rightLeg.skiPivot;
     rightSkiMesh    = rightLeg.ski;
+    rightPlankMesh  = rightLeg.plank;
 
     group.add(upperBodyGroup, leftLegGroup, rightLegGroup);
 
     applyBasePose();
 
-    registerEquipment(leftSkiMesh,  leftSkiGroup,  -1, 'ski');
-    registerEquipment(rightSkiMesh, rightSkiGroup,  1, 'ski');
-    registerEquipment(leftPoleMesh, leftPoleGroup, -1, 'pole');
-    registerEquipment(rightPoleMesh, rightPoleGroup, 1, 'pole');
+    registerEquipment(leftSkiMesh,    leftSkiGroup,  -1, 'ski');
+    registerEquipment(rightSkiMesh,   rightSkiGroup,  1, 'ski');
+    registerEquipment(leftPlankMesh,  leftSkiGroup,  -1, 'ski');
+    registerEquipment(rightPlankMesh, rightSkiGroup,  1, 'ski');
+    registerEquipment(leftPoleMesh,   leftPoleGroup, -1, 'pole');
+    registerEquipment(rightPoleMesh,  rightPoleGroup, 1, 'pole');
 
     group.traverse(function (node) {
         if (node.isMesh) node.castShadow = true;
@@ -755,5 +879,40 @@ export function animateSkierIdle(time) {
         idleActiveBeat = pickRandomBeat();
         idleBeatStart  = time;
         idleActiveBeat.fn(0);
+    }
+}
+
+export function setSkierAppearance(config = {}) {
+    if (config.jacketColor !== undefined && jacketMat) {
+        jacketMat.color.set(config.jacketColor);
+    }
+    if (config.skiColor !== undefined && skiMat) {
+        skiMat.color.set(config.skiColor);
+    }
+    if (config.skiAccentColor !== undefined && skiAccentMat) {
+        skiAccentMat.color.set(config.skiAccentColor);
+    }
+    if (config.pantsColor !== undefined && pantsMat) {
+        pantsMat.color.set(config.pantsColor);
+    }
+    if (config.hatColor !== undefined) {
+        if (hatMat)    hatMat.color.set(config.hatColor);
+        if (beanieMat) beanieMat.color.set(config.hatColor);
+    }
+    if (config.gloveColor !== undefined && gloveMat) {
+        gloveMat.color.set(config.gloveColor);
+    }
+    if (config.hat) {
+        for (const k in hatVariants) hatVariants[k].visible = (k === config.hat);
+    }
+    if (config.goggles) {
+        for (const k in goggleVariants) goggleVariants[k].visible = (k === config.goggles);
+    }
+    if (config.skiModel) {
+        const planks = config.skiModel === 'planks';
+        if (leftSkiMesh)    leftSkiMesh.visible    = !planks;
+        if (rightSkiMesh)   rightSkiMesh.visible   = !planks;
+        if (leftPlankMesh)  leftPlankMesh.visible  = planks;
+        if (rightPlankMesh) rightPlankMesh.visible = planks;
     }
 }

@@ -6,8 +6,10 @@ import {
     resetSkierEquipment, resetSkierPose,
     updateReleasedEquipment,
     applySkierTuckPose, applySkierSnowplowPose,
-    animateSkierIdle
+    animateSkierIdle,
+    setSkierAppearance,
 } from './skier.js';
+import { loadShopSave, getEquippedAppearance } from './shop.js';
 import {
     createTerrain, updateTerrain,
     CHUNK_LENGTH, CHUNK_WIDTH, PLAY_HALF_X, SLOPE_TILT
@@ -33,13 +35,20 @@ import {
     loadSave as loadCoinSave,
     updateCoins, checkCoinPickup,
     getWallet, getRunCoins,
-    resetRunCoins, commitRunToWallet
+    resetRunCoins, commitRunToWallet,
+    spend,
 } from './coins.js';
 import {
     updateGameAudio, playCoinPickup, playUiClick
 } from './audio.js';
 
 loadCoinSave();
+loadShopSave();
+
+function applyEquippedAppearance() {
+    setSkierAppearance(getEquippedAppearance());
+}
+applyEquippedAppearance();
 
 
 // ============================================================
@@ -212,6 +221,13 @@ let camMode = 0;                    // 0 = behind, 1 = first-person, 2 = facing
 const camLook = new THREE.Vector3(0, 0.8, 4);  // smoothed lookAt target
 const skierBounds = new THREE.Box3();
 
+// Shop preview state: when active the camera pans to a frontal close-up of
+// the skier, the shop spotlight turns on, and pointer drag rotates the model
+let shopActive = false;
+let shopDragging = false;
+let shopLastPointerX = 0;
+let shopYaw = 0;
+
 
 // ============================================================
 //  RENDERER, SCENE, CAMERA
@@ -266,6 +282,21 @@ sunLight.target = sunTarget;
 
 scene.add(sunLight);
 
+// Shop spotlight: short-range point light placed just in front of the skier so
+// only the model is lit while previewing items. Activated when the shop screen
+// is open; the rest of the scene continues to follow the day/night cycle.
+const shopSpot = new THREE.PointLight(0xffeedd, 6.0, 5.5, 1.6);
+shopSpot.position.set(0.6, 2.0, 1.6);
+shopSpot.visible = false;
+scene.add(shopSpot);
+
+// Soft rim from the opposite side so the back/left of the skier isn't pitch
+// black under the spotlight. Same on/off gating as the spot.
+const shopRim = new THREE.PointLight(0x88aacc, 2.5, 5.0, 1.6);
+shopRim.position.set(-0.8, 1.6, -1.0);
+shopRim.visible = false;
+scene.add(shopRim);
+
 // PointLight pool reassigned to the closest lit obstacles each frame so the
 // scene avoids creating a light per obstacle (which would tank framerate)
 const NIGHT_LIGHT_COUNT = 8;
@@ -285,18 +316,18 @@ for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
 // sun colour and orbit, ambient lighting, and fog distances. Night is
 // compressed to roughly 30 s of the cycle
 const CYCLE_KEYFRAMES = [
-    { time: 0.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x2a2a50), ambientIntensity: 0.40, fogNear: 20, fogFar: 140 },
-    { time: 0.05, skyColor: c(0x252540), sunColor: c(0x556688), sunIntensity: 0.30, ambientColor: c(0x252545), ambientIntensity: 0.38, fogNear: 22, fogFar: 150 },
-    { time: 0.10, skyColor: c(0xd48a5a), sunColor: c(0xffaa55), sunIntensity: 0.65, ambientColor: c(0x886655), ambientIntensity: 0.35, fogNear: 25, fogFar: 180 },
-    { time: 0.20, skyColor: c(0x87ceeb), sunColor: c(0xfff5e0), sunIntensity: 1.10, ambientColor: c(0x8899bb), ambientIntensity: 0.55, fogNear: 38, fogFar: 260 },
-    { time: 0.42, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.25, ambientColor: c(0x99aacc), ambientIntensity: 0.60, fogNear: 42, fogFar: 290 },
-    { time: 0.60, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.20, ambientColor: c(0x8899bb), ambientIntensity: 0.58, fogNear: 40, fogFar: 280 },
-    { time: 0.64, skyColor: c(0xddaa66), sunColor: c(0xffcc77), sunIntensity: 0.80, ambientColor: c(0x887755), ambientIntensity: 0.45, fogNear: 30, fogFar: 210 },
-    { time: 0.68, skyColor: c(0xcc6633), sunColor: c(0xff5533), sunIntensity: 0.50, ambientColor: c(0x774433), ambientIntensity: 0.38, fogNear: 25, fogFar: 180 },
-    { time: 0.73, skyColor: c(0x553344), sunColor: c(0x887766), sunIntensity: 0.30, ambientColor: c(0x443344), ambientIntensity: 0.33, fogNear: 22, fogFar: 160 },
-    { time: 0.80, skyColor: c(0x2a2240), sunColor: c(0x556677), sunIntensity: 0.26, ambientColor: c(0x2a2244), ambientIntensity: 0.30, fogNear: 20, fogFar: 150 },
-    { time: 0.94, skyColor: c(0x1e1e30), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x252545), ambientIntensity: 0.38, fogNear: 20, fogFar: 140 },
-    { time: 1.00, skyColor: c(0x1a1a35), sunColor: c(0x445577), sunIntensity: 0.25, ambientColor: c(0x2a2a50), ambientIntensity: 0.40, fogNear: 20, fogFar: 140 },
+    { time: 0.00, skyColor: c(0x1a1a35), sunColor: c(0x6680aa), sunIntensity: 0.55, ambientColor: c(0x3a3a60), ambientIntensity: 0.65, fogNear: 20, fogFar: 140 },
+    { time: 0.05, skyColor: c(0x252540), sunColor: c(0x7888aa), sunIntensity: 0.60, ambientColor: c(0x353560), ambientIntensity: 0.62, fogNear: 22, fogFar: 150 },
+    { time: 0.10, skyColor: c(0xd48a5a), sunColor: c(0xffaa55), sunIntensity: 0.95, ambientColor: c(0xa07a66), ambientIntensity: 0.55, fogNear: 25, fogFar: 180 },
+    { time: 0.20, skyColor: c(0x87ceeb), sunColor: c(0xfff5e0), sunIntensity: 1.30, ambientColor: c(0x9eaecc), ambientIntensity: 0.70, fogNear: 38, fogFar: 260 },
+    { time: 0.42, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.45, ambientColor: c(0xaabbdd), ambientIntensity: 0.75, fogNear: 42, fogFar: 290 },
+    { time: 0.60, skyColor: c(0x87ceeb), sunColor: c(0xffffff), sunIntensity: 1.40, ambientColor: c(0x9eaecc), ambientIntensity: 0.72, fogNear: 40, fogFar: 280 },
+    { time: 0.64, skyColor: c(0xddaa66), sunColor: c(0xffcc77), sunIntensity: 1.05, ambientColor: c(0xa08866), ambientIntensity: 0.62, fogNear: 30, fogFar: 210 },
+    { time: 0.68, skyColor: c(0xcc6633), sunColor: c(0xff7755), sunIntensity: 0.80, ambientColor: c(0x8e5544), ambientIntensity: 0.55, fogNear: 25, fogFar: 180 },
+    { time: 0.73, skyColor: c(0x553344), sunColor: c(0x9988aa), sunIntensity: 0.60, ambientColor: c(0x5a4458), ambientIntensity: 0.55, fogNear: 22, fogFar: 160 },
+    { time: 0.80, skyColor: c(0x2a2240), sunColor: c(0x7788aa), sunIntensity: 0.55, ambientColor: c(0x3a3258), ambientIntensity: 0.55, fogNear: 20, fogFar: 150 },
+    { time: 0.94, skyColor: c(0x1e1e30), sunColor: c(0x6680aa), sunIntensity: 0.55, ambientColor: c(0x353560), ambientIntensity: 0.60, fogNear: 20, fogFar: 140 },
+    { time: 1.00, skyColor: c(0x1a1a35), sunColor: c(0x6680aa), sunIntensity: 0.55, ambientColor: c(0x3a3a60), ambientIntensity: 0.65, fogNear: 20, fogFar: 140 },
 ];
 
 function c(hex) { return new THREE.Color(hex); }
@@ -696,6 +727,26 @@ const menu = createMenu({
     getStartCycleOffset: () => startCycleOffset,
     setStartCycleOffset: (t) => { startCycleOffset = t; },
     getWallet,
+    spend,
+    onAppearanceChange: applyEquippedAppearance,
+    applyAppearance: (config) => setSkierAppearance(config),
+    onShopStateChange: (active) => {
+        shopActive = active;
+        if (active) {
+            shopYaw = 0;
+            // Flatten the slope mount so dragging spins the skier around true Y
+            skierMount.rotation.x = 0;
+            skierMount.position.y = 0;
+            renderer.domElement.style.cursor = 'grab';
+        } else {
+            shopDragging = false;
+            shopYaw = 0;
+            skier.rotation.y = 0;
+            skierMount.rotation.x = SLOPE_TILT;
+            skierMount.position.y = -0.07;
+            renderer.domElement.style.cursor = '';
+        }
+    },
 });
 
 
@@ -726,6 +777,25 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Drag-to-rotate the skier while the shop is open. Listening on the canvas for
+// the down event keeps clicks on the shop UI from triggering a drag.
+renderer.domElement.addEventListener('pointerdown', (e) => {
+    if (!shopActive) return;
+    shopDragging = true;
+    shopLastPointerX = e.clientX;
+    renderer.domElement.style.cursor = 'grabbing';
+});
+window.addEventListener('pointermove', (e) => {
+    if (!shopDragging) return;
+    const dx = e.clientX - shopLastPointerX;
+    shopLastPointerX = e.clientX;
+    shopYaw += dx * 0.01;
+});
+window.addEventListener('pointerup', () => {
+    shopDragging = false;
+    renderer.domElement.style.cursor = shopActive ? 'grab' : '';
 });
 
 
@@ -930,6 +1000,7 @@ function startGame() {
     gameState = 'intro';
     introTimer = 0;
     lastTime   = performance.now();
+    applyEquippedAppearance();
     menu.hide();
     avalanche.visible = true;
     skier.position.set(0, 0.012, 0);
@@ -1104,9 +1175,24 @@ function animate(now) {
     const blizzardSmooth = 1 - Math.exp(-BLIZZARD_BLEND_RATE * delta);
     blizzardFactor += (blizzardTarget - blizzardFactor) * blizzardSmooth;
 
+    // Shop spotlight + rim track the skier so they stay anchored to the model
+    shopSpot.visible = shopActive;
+    shopRim.visible  = shopActive;
+    shopSpot.position.set(
+        skier.position.x + 0.6,
+        skier.position.y + 2.0,
+        skier.position.z + 1.6
+    );
+    shopRim.position.set(
+        skier.position.x - 0.8,
+        skier.position.y + 1.6,
+        skier.position.z - 1.0
+    );
+
     // -- Menu: skier idling at gameplay start, framed on the right --
     if (gameState === 'menu') {
         animateSkierIdle(now * 0.001);
+        if (shopActive) skier.rotation.y = shopYaw;
     }
     // -- Intro: short camera pan, skier already skiing for a clean pickup --
     else if (gameState === 'intro') {
@@ -1205,7 +1291,7 @@ function animate(now) {
         hud.innerHTML =
             'Score: ' + Math.floor(score) + ' m<br>' +
             'Speed: ' + gameSpeed.toFixed(1) + ' m/s<br>' +
-            '<span style="color:#a8cce8; text-shadow:0 0 8px rgba(168,204,232,0.7);">&#10052;</span> ' +
+            '<span style="color:#a8cce8; text-shadow:0 1px 3px rgba(0,0,0,0.75), 0 2px 6px rgba(0,0,0,0.45), 0 0 8px rgba(168,204,232,0.7);">&#10052;</span> ' +
             getRunCoins();
     }
     // -- Falling: edge slip, obstacle crash, or avalanche overrun --
@@ -1312,7 +1398,9 @@ function animate(now) {
     }
 
     // Inverse of the sun: 0 by day, 1 once the sun drops below ~0.5 intensity
-    const nightFactor = Math.max(0, 1.0 - sunLight.intensity / 0.5);
+    // Threshold scaled to the cycle's new sun minimum (~0.55) so lanterns,
+    // fireflies and coin glow still fire at night without coming on at dusk
+    const nightFactor = Math.max(0, 1.0 - sunLight.intensity / 1.0);
 
     updateCoins(chunks, now * 0.001, nightFactor);
 
@@ -1404,9 +1492,15 @@ function animate(now) {
     let targetPos, targetLook;
 
     if (gameState === 'menu') {
-        // Low front-right: skier silhouettes against the sky
-        targetPos  = { x: 3.0, y: 1.0, z: 3.5 };
-        targetLook = { x: -1.8, y: 1.4, z: 0 };
+        if (shopActive) {
+            // Frontal close-up so the player can read the items on the model
+            targetPos  = { x: 0, y: 1.4, z: 3.4 };
+            targetLook = { x: 0, y: 1.0, z: 0 };
+        } else {
+            // Low front-right: skier silhouettes against the sky
+            targetPos  = { x: 3.0, y: 1.0, z: 3.5 };
+            targetLook = { x: -1.8, y: 1.4, z: 0 };
+        }
     } else if (gameState === 'intro' || camMode === 0) {
         // Behind
         targetPos  = { x: skier.position.x * 0.85,

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createCircleCollider, createOrientedBoxCollider } from './collision.js';
 import { getBiome, BIOME_BASE, BIOME_FOREST } from './biomes.js';
 import { populateChunkCoins, clearChunkCoins } from './coins.js';
+import { TEX, applyMaterialTextures } from './textures.js';
 
 const EDGE_MARGIN = 2.0;
 
@@ -66,65 +67,13 @@ const ROCK_SM = new THREE.DodecahedronGeometry(0.5, 0);
 const ROCK_LG = new THREE.DodecahedronGeometry(0.9, 1);
 
 
-const textureLoader = new THREE.TextureLoader();
+const trunkMatStd  = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 5 });
+const trunkMatAlp  = new THREE.MeshPhongMaterial({ color: 0xc8c0b0, shininess: 4 });
+const trunkMatWide = new THREE.MeshPhongMaterial({ color: 0xe8d0a8, shininess: 6 });
 
-function loadTexture(path, onLoaded) {
-    textureLoader.load(
-        path,
-        (tex) => {
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
-            tex.anisotropy = 8;
-            onLoaded(tex);
-        },
-        undefined,
-        () => console.warn('Texture missing:', path)
-    );
-}
-
-function tiledClone(tex, repeatU, repeatV) {
-    const c = tex.clone();
-    c.wrapS = THREE.RepeatWrapping;
-    c.wrapT = THREE.RepeatWrapping;
-    c.repeat.set(repeatU, repeatV);
-    c.anisotropy = 8;
-    c.needsUpdate = true;
-    return c;
-}
-
-const trunkMatStd   = new THREE.MeshPhongMaterial({ color: 0x8a6a47, shininess: 5 });
-const trunkMatAlp   = new THREE.MeshPhongMaterial({ color: 0x7a6750, shininess: 4 });
-const trunkMatWide  = new THREE.MeshPhongMaterial({ color: 0xa3835a, shininess: 6 });
-
-loadTexture('assets/textures/bark/bark_brown_02_diff_1k.jpg', (tex) => {
-    tex.colorSpace = THREE.SRGBColorSpace;
-
-    trunkMatStd.map  = tiledClone(tex, 1, 2);
-    trunkMatStd.color.setHex(0xffffff);
-    trunkMatStd.needsUpdate = true;
-
-    trunkMatAlp.map  = tiledClone(tex, 1, 4);
-    trunkMatAlp.color.setHex(0xc8c0b0);
-    trunkMatAlp.needsUpdate = true;
-
-    trunkMatWide.map = tiledClone(tex, 2, 1);
-    trunkMatWide.color.setHex(0xe8d0a8);
-    trunkMatWide.needsUpdate = true;
-});
-
-loadTexture('assets/textures/bark/bark_brown_02_nor_gl_1k.jpg', (tex) => {
-    trunkMatStd.normalMap  = tiledClone(tex, 1, 2);
-    trunkMatStd.normalScale.set(0.8, 0.8);
-    trunkMatStd.needsUpdate = true;
-
-    trunkMatAlp.normalMap  = tiledClone(tex, 1, 4);
-    trunkMatAlp.normalScale.set(0.6, 0.6);
-    trunkMatAlp.needsUpdate = true;
-
-    trunkMatWide.normalMap = tiledClone(tex, 2, 1);
-    trunkMatWide.normalScale.set(1.0, 1.0);
-    trunkMatWide.needsUpdate = true;
-});
+applyMaterialTextures(trunkMatStd,  TEX.bark, { repeat: [1, 2], normalScale: 0.8 });
+applyMaterialTextures(trunkMatAlp,  TEX.bark, { repeat: [1, 4], normalScale: 0.6 });
+applyMaterialTextures(trunkMatWide, TEX.bark, { repeat: [2, 1], normalScale: 1.0 });
 
 function makeCanopyTexture() {
     const size = 256;
