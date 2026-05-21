@@ -1,3 +1,5 @@
+import { playUiClick, playMenuMusic, stopMenuMusic } from './audio.js';
+
 const STYLE_ID = 'menu-styles';
 
 function injectStyles() {
@@ -105,17 +107,17 @@ function buildMainScreen(handlers) {
     const playBtn = document.createElement('button');
     playBtn.className = 'menu-btn menu-btn-primary';
     playBtn.textContent = 'PLAY';
-    playBtn.addEventListener('click', handlers.onPlay);
+    playBtn.addEventListener('click', () => { playUiClick(); handlers.onPlay(); });
 
     const settingsBtn = document.createElement('button');
     settingsBtn.className = 'menu-btn';
     settingsBtn.textContent = 'SETTINGS';
-    settingsBtn.addEventListener('click', handlers.onSettings);
+    settingsBtn.addEventListener('click', () => { playUiClick(); handlers.onSettings(); });
 
     const shopBtn = document.createElement('button');
     shopBtn.className = 'menu-btn';
     shopBtn.textContent = 'SHOP';
-    shopBtn.addEventListener('click', handlers.onShop);
+    shopBtn.addEventListener('click', () => { playUiClick(); handlers.onShop(); });
 
     buttons.appendChild(playBtn);
     buttons.appendChild(settingsBtn);
@@ -149,7 +151,7 @@ function buildSettingsScreen({ getStartCycleOffset, setStartCycleOffset, onBack 
     const back = document.createElement('div');
     back.className = 'menu-back';
     back.textContent = '< BACK';
-    back.addEventListener('click', onBack);
+    back.addEventListener('click', () => { playUiClick(); onBack(); });
     screen.appendChild(back);
 
     const title = document.createElement('div');
@@ -197,7 +199,7 @@ function buildShopScreen({ onBack }) {
     const back = document.createElement('div');
     back.className = 'menu-back';
     back.textContent = '< BACK';
-    back.addEventListener('click', onBack);
+    back.addEventListener('click', () => { playUiClick(); onBack(); });
     screen.appendChild(back);
 
     const title = document.createElement('div');
@@ -292,10 +294,12 @@ export function createMenu({
             overlay.style.visibility = 'visible';
             refreshWallet();
             showScreen('main');
+            playMenuMusic();
         },
         hide() {
             overlay.style.opacity = '0';
             overlay.style.visibility = 'hidden';
+            stopMenuMusic();
         },
     };
 }

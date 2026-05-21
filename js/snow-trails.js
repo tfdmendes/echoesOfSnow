@@ -6,10 +6,11 @@ const BASE_WIDTH = 0.11;
 const BRAKE_WIDTH = 0.18;
 const MIN_SEGMENT_LENGTH = 0.08;
 const MAX_SEGMENT_JUMP = 2.5;
-const SEGMENTS_PER_CHUNK = 900;
+const MAX_DRAW_STEP = 0.30;
+const SEGMENTS_PER_CHUNK = 1400;
 const SKI_COUNT = 2;
-const BASE_CONTACT_RESPONSE = 0.62;
-const BRAKE_CONTACT_RESPONSE = 0.38;
+const BASE_CONTACT_RESPONSE = 1.0;
+const BRAKE_CONTACT_RESPONSE = 0.85;
 
 const trailMaterial = new THREE.MeshBasicMaterial({
     color: 0xaec0cf,
@@ -193,6 +194,21 @@ export function createSnowTrails(chunks) {
 
                 if (drawDistance > MAX_SEGMENT_JUMP) {
                     previous.drawCenter.copy(previous.brushCenter);
+                } else if (drawDistance > MAX_DRAW_STEP) {
+                    // Subdivide long per-frame moves so high-speed trails read
+                    // as a continuous line instead of one chunky segment a frame.
+                    const steps = Math.ceil(drawDistance / MAX_DRAW_STEP);
+                    const stepX = dx / steps;
+                    const stepZ = dz / steps;
+                    const layer = chunk.userData.snowTrailLayer;
+                    const subTarget = { x: 0, z: 0 };
+                    for (let s = 0; s < steps; s++) {
+                        subTarget.x = previous.drawCenter.x + stepX;
+                        subTarget.z = previous.drawCenter.z + stepZ;
+                        addSegment(layer, previous.drawCenter, subTarget, width);
+                        previous.drawCenter.x = subTarget.x;
+                        previous.drawCenter.z = subTarget.z;
+                    }
                 } else if (addSegment(chunk.userData.snowTrailLayer, previous.drawCenter, previous.brushCenter, width)) {
                     previous.drawCenter.copy(previous.brushCenter);
                 }

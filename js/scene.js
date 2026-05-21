@@ -35,6 +35,9 @@ import {
     getWallet, getRunCoins,
     resetRunCoins, commitRunToWallet
 } from './coins.js';
+import {
+    updateGameAudio, playCoinPickup, playUiClick
+} from './audio.js';
 
 loadCoinSave();
 
@@ -139,15 +142,15 @@ const AVALANCHE_FALL_PITCH      = 1.1;
 
 // ---- Speed lines (2D canvas overlay above the WebGL viewport) ----
 const SPEED_LINE_COUNT          = 28;
-const SPEED_LINE_THRESHOLD_LO   = 80;    // no streaks below 80 m/s
-const SPEED_LINE_THRESHOLD_HI   = 110;   // full strength at 110 m/s
+const SPEED_LINE_THRESHOLD_LO   = 40;    // no streaks below 40 m/s
+const SPEED_LINE_THRESHOLD_HI   = 65;    // full strength at 65 m/s
 const SPEED_LINE_MAX_OPACITY    = 0.50;
 const SPEED_LINE_OPACITY_CURVE  = 1.3;      // >1 = slow onset, sharp climb
 const SPEED_LINE_MOTION_GAIN    = 9.0;      // px/s per (m/s) of gameSpeed
 const SPEED_LINE_LIFE_MIN       = 0.30;
 const SPEED_LINE_LIFE_MAX       = 0.85;
-const SPEED_LINE_TAIL_MIN       = 28;
-const SPEED_LINE_TAIL_MAX       = 85;
+const SPEED_LINE_TAIL_MIN       = 45;
+const SPEED_LINE_TAIL_MAX       = 130;
 const SPEED_LINE_WIDTH_MIN      = 0.8;
 const SPEED_LINE_WIDTH_MAX      = 1.8;
 // Spawn radius as a fraction of the distance to the viewport edge along the
@@ -680,8 +683,8 @@ overlay.innerHTML =
         '<button id="go-menu"    class="menu-btn">MAIN MENU</button>' +
     '</div>';
 document.body.appendChild(overlay);
-overlay.querySelector('#go-restart').addEventListener('click', () => restartGame());
-overlay.querySelector('#go-menu').addEventListener('click', () => returnToMenu());
+overlay.querySelector('#go-restart').addEventListener('click', () => { playUiClick(); restartGame(); });
+overlay.querySelector('#go-menu').addEventListener('click', () => { playUiClick(); returnToMenu(); });
 
 
 // ============================================================
@@ -1194,7 +1197,8 @@ function animate(now) {
             } else if (avalancheGap <= GAP_DEATH) {
                 beginAvalancheFall();
             } else {
-                checkCoinPickup(skier.position, chunks);
+                const picked = checkCoinPickup(skier.position, chunks);
+                if (picked > 0) playCoinPickup(picked);
             }
         }
 
@@ -1320,6 +1324,21 @@ function animate(now) {
     updateFireflies(chunks, now * 0.001, nightFactor);
     updateBlizzard(delta, blizzardFactor, tickWindX);
     updateWindStreaks(delta, blizzardFactor);
+
+    // Audio mix: only the gust phase drives the freezing-wind layer; telegraph
+    // and calm both report 0 so the storm "breathes" instead of being constant.
+    const gustStrength = (windGust.mode === 'gust' && windGust.peak > 0)
+        ? Math.max(0, Math.min(1, Math.abs(tickWindX) / windGust.peak))
+        : 0;
+    updateGameAudio({
+        gameState,
+        gameSpeed,
+        boostAmount,
+        biomeName: tickBiome.name,
+        nightFactor,
+        blizzardFactor,
+        windGustStrength: gustStrength,
+    });
 
     if (nightFactor > 0) {
         // Lampposts sit higher and shine stronger than fence lanterns
