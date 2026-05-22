@@ -223,8 +223,8 @@ function buildMainScreen(handlers) {
     shopBtn.addEventListener('click', () => { playUiClick(); handlers.onShop(); });
 
     buttons.appendChild(playBtn);
-    buttons.appendChild(settingsBtn);
     buttons.appendChild(shopBtn);
+    buttons.appendChild(settingsBtn);
     screen.appendChild(buttons);
 
     const hint = document.createElement('div');
@@ -506,7 +506,8 @@ function buildShopScreen({ onBack, getWallet, spend, onAppearanceChange, applyAp
                 rebuildGrid();
             },
         };
-        for (const item of def.items) {
+        const sortedItems = [...def.items].sort((a, b) => a.price - b.price);
+        for (const item of sortedItems) {
             grid.appendChild(buildShopItem(def.id, item, ctx));
         }
         refreshConfirmBar();

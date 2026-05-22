@@ -12,8 +12,8 @@ const COIN_BOB_AMP      = 0.08;
 const COIN_BOB_FREQ     = 1.5;
 const COIN_SPIN_RATE    = 2.0;
 
-const COIN_EMISSIVE_DAY   = 0.18;
-const COIN_EMISSIVE_NIGHT = 0.55;
+const COIN_EMISSIVE_DAY   = 0.38;
+const COIN_EMISSIVE_NIGHT = 0.70;
 
 const COIN_MIN_PER_CHUNK = 2;
 const COIN_MAX_PER_CHUNK = 5;

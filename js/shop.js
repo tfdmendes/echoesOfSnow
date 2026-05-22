@@ -5,32 +5,32 @@ export const CHARACTERS = [
     {
         id: 'classic', name: 'CLASSIC', price: 0,
         jacketColor: 0xdd2222, skiColor: 0x2244aa, skiAccentColor: 0xeef6ff,
-        hatColor: 0xcc1111, hat: 'beanie', goggles: 'orange',
+        hatColor: 0xcc1111, pantsColor: 0x111a33, hat: 'beanie', goggles: 'orange',
     },
     {
         id: 'alpine', name: 'ALPINE', price: 60,
         jacketColor: 0x2c4a8a, skiColor: 0x4477cc, skiAccentColor: 0xddeeff,
-        hatColor: 0x1a2a4a, hat: 'helmet', goggles: 'mirror',
+        hatColor: 0x1a2a4a, pantsColor: 0x111a33, hat: 'helmet', goggles: 'mirror',
     },
     {
         id: 'ranger', name: 'RANGER', price: 120,
         jacketColor: 0x2e6b3a, skiColor: 0xddd6b8, skiAccentColor: 0x5a4a2a,
-        hatColor: 0x4a3a22, hat: 'cap', goggles: 'sunglasses',
+        hatColor: 0x4a3a22, pantsColor: 0x2a2418, hat: 'cap', goggles: 'sunglasses',
     },
     {
         id: 'shadow', name: 'SHADOW', price: 200,
         jacketColor: 0x141420, skiColor: 0x222226, skiAccentColor: 0x6677aa,
-        hatColor: 0x101018, hat: 'none', goggles: 'mirror',
+        hatColor: 0x101018, pantsColor: 0x0a0a12, hat: 'none', goggles: 'mirror',
     },
     {
         id: 'royale', name: 'ROYALE', price: 350,
-        jacketColor: 0x6b2299, skiColor: 0xd4a72c, skiAccentColor: 0xfff0b0,
-        hatColor: 0x3a1155, hat: 'beret', goggles: 'mirror',
+        jacketColor: 0xa6182a, skiColor: 0xe8b923, skiAccentColor: 0xfff2c0,
+        hatColor: 0x6a1020, pantsColor: 0xd8c298, hat: 'crown', goggles: 'mirror',
     },
     {
         id: 'racer', name: 'RACER', price: 280,
         jacketColor: 0xe0b020, skiColor: 0xc02828, skiAccentColor: 0x202020,
-        hatColor: 0x882020, hat: 'helmet', goggles: 'visor',
+        hatColor: 0x882020, pantsColor: 0x111a33, hat: 'helmet', goggles: 'visor',
     },
 ];
 
@@ -177,6 +177,7 @@ export function buildAppearance(charId, jacketId, skiId) {
         skiColor:       ski.color       !== null ? ski.color       : char.skiColor,
         skiAccentColor: ski.accent      !== null ? ski.accent      : char.skiAccentColor,
         hatColor:       char.hatColor,
+        pantsColor:     char.pantsColor,
         hat:            char.hat,
         goggles:        char.goggles,
         skiModel:       ski.model || 'standard',

@@ -298,9 +298,34 @@ function buildHatVariants() {
     beretStem.position.set(0, 0.13, -0.04);
     beret.add(beretBase, beretStem);
 
+    const crown = new THREE.Group();
+    const crownMat = new THREE.MeshPhongMaterial({
+        color: 0xf5c84a, emissive: 0x3a2200, shininess: 130, specular: 0xfff2b0,
+    });
+    const crownBand = mark(new THREE.Mesh(
+        new THREE.CylinderGeometry(0.14, 0.14, 0.055, 18, 1, true),
+        crownMat
+    ));
+    crownBand.position.set(0, 0.11, 0);
+    crown.add(crownBand);
+    const spikeGeo = new THREE.ConeGeometry(0.028, 0.075, 8);
+    const SPIKES = 6;
+    for (let i = 0; i < SPIKES; i++) {
+        const ang = (i / SPIKES) * Math.PI * 2;
+        const spike = mark(new THREE.Mesh(spikeGeo, crownMat));
+        spike.position.set(Math.sin(ang) * 0.123, 0.175, Math.cos(ang) * 0.123);
+        crown.add(spike);
+    }
+    const jewelMat = new THREE.MeshPhongMaterial({
+        color: 0xd6224e, emissive: 0x551020, shininess: 160,
+    });
+    const jewel = mark(new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), jewelMat));
+    jewel.position.set(0, 0.115, 0.14);
+    crown.add(jewel);
+
     const none = new THREE.Group();
 
-    return { beanie, helmet, cap, beret, none };
+    return { beanie, helmet, cap, beret, crown, none };
 }
 
 function buildGoggleVariants() {

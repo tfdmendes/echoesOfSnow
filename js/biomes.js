@@ -21,6 +21,7 @@ const SPEED_BASELINE  = 14;
  *   windTelegraphMin/Max  Silent lead-in before each gust, seconds.
  *   windCalmMin/Max    Quiet interval between gust cycles, seconds.
  *   windApproachDist   Look-ahead (world units) for the storm front fade-in.
+ *   windRecedeDist     Look-behind (world units) for the storm front fade-out.
  *   fogNearOverride    Target fog.near under full blizzard effect.
  *   fogFarOverride     Target fog.far under full blizzard effect.
  *   fogColorOverride   Hex colour the fog tints toward.
@@ -60,7 +61,7 @@ export const BIOMES = {
     },
     [BIOME_BLIZZARD]: {
         name: BIOME_BLIZZARD,
-        spawnChance: 0.10,
+        spawnChance: 0.80,
         chunkSpan: 10,
         densityMultiplier: 0.7,
         coinDensityMultiplier: 1.4,
@@ -81,6 +82,7 @@ export const BIOMES = {
         windCalmMin:          1.8,
         windCalmMax:          3.6,
         windApproachDist:     90,
+        windRecedeDist:       90,
         fogNearOverride:      12,
         fogFarOverride:       80,
         fogColorOverride:     0xdfe6ec,

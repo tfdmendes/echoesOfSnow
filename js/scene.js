@@ -779,10 +779,14 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Drag-to-rotate the skier while the shop is open. Listening on the canvas for
-// the down event keeps clicks on the shop UI from triggering a drag.
-renderer.domElement.addEventListener('pointerdown', (e) => {
+// Drag-to-rotate the skier while the shop is open. We listen on window so the
+// drag can start anywhere outside the panel (including on the skier itself,
+// which is rendered to the canvas behind the menu overlay). Pointer-down on an
+// interactive shop element is filtered out so cards and buttons still click.
+const SHOP_UI_SELECTOR = '.shop-tab, .shop-item, .shop-confirm-btn, .menu-back, .menu-panel-title';
+window.addEventListener('pointerdown', (e) => {
     if (!shopActive) return;
+    if (e.target && e.target.closest && e.target.closest(SHOP_UI_SELECTOR)) return;
     shopDragging = true;
     shopLastPointerX = e.clientX;
     renderer.domElement.style.cursor = 'grabbing';
@@ -842,24 +846,27 @@ function getCurrentBiome() {
 // visible long before the player enters it: fog tightens and snow particles
 // fade in as the distance closes.
 function computeBlizzardTarget() {
-    const approach = getBiome(BIOME_BLIZZARD).windApproachDist || 80;
-    let nearestDist = Infinity;
+    const biome   = getBiome(BIOME_BLIZZARD);
+    const approach = biome.windApproachDist || 80;
+    const recede   = biome.windRecedeDist   || approach;
+    let best = 0;
 
     for (const c of chunks) {
         if (c.userData.biome !== BIOME_BLIZZARD) continue;
-        // Near edge is the +Z face of the chunk in world space; chunks slide
-        // toward -Z each frame, so this distance shrinks as the storm approaches
-        const nearEdgeZ = c.position.z - CHUNK_LENGTH / 2;
-        const dist = nearEdgeZ - skier.position.z;
-        // Reject chunks fully past the skier so the ramp does not re-fire
-        // from the tail end of the front
-        if (dist < -CHUNK_LENGTH) continue;
-        if (dist < nearestDist) nearestDist = dist;
-    }
+        // Chunks slide toward -Z, so the +Z (near) face is the leading edge as
+        // the storm approaches and the -Z (far) face is the trailing edge as it
+        // recedes. Ramp on whichever edge the skier is currently outside of.
+        const aheadDist  = (c.position.z - CHUNK_LENGTH / 2) - skier.position.z;
+        const behindDist = skier.position.z - (c.position.z + CHUNK_LENGTH / 2);
 
-    if (nearestDist === Infinity) return 0;
-    if (nearestDist <= 0) return 1;
-    return Math.max(0, 1 - nearestDist / approach);
+        let t;
+        if (aheadDist > 0)       t = Math.max(0, 1 - aheadDist  / approach);
+        else if (behindDist > 0) t = Math.max(0, 1 - behindDist / recede);
+        else                     t = 1;
+
+        if (t > best) best = t;
+    }
+    return best;
 }
 
 // Advance the gust state machine and return the lateral force for this tick.
