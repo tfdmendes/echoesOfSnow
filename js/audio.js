@@ -1,3 +1,31 @@
+/*
+Author: Tiago Mendes 119378         
+        Anthropic Claude Sonnet 4.6 
+        OpenAI ChatGPT 5.5 Thinking 
+
+This module manages the game's sound and music using the Web Audio API:
+- loads music, sound effects and ambient loops;
+- separates music, sound effects and ambience into different gain buses;
+- fades sounds in and out depending on the game state and biome;
+- adjusts skiing and wind sounds according to speed, boost and weather;
+- applies a small crossfade to looping audio buffers to reduce audible loop cuts.
+
+AI assistance:
+This file was developed with AI assistance, mainly for structuring the Web Audio API
+logic, managing looping sounds, and implementing smooth volume transitions between
+game states and biomes.
+
+
+Representative prompt used:
+"Help me build an audio manager for a Three.js skiing game using the Web Audio API.
+I need menu music, sound effects, looping ambience, biome-based wind/forest/blizzard
+layers, and smooth fade transitions instead of abruptly starting and stopping audio."
+
+Manual work:
+
+*/
+
+
 import { BIOME_BASE, BIOME_FOREST, BIOME_BLIZZARD } from './biomes.js';
 
 const FILES = {

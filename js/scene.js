@@ -1,3 +1,29 @@
+/*
+Author: Tiago Mendes 119378         
+        OpenAI ChatGPT 5.5 Thinking 
+
+This module is the main scene and game controller for Echoes of Snow:
+- creates the Three.js scene, camera, renderer, lights, fog, sun/moon visuals,
+  terrain chunks, scenery, avalanche, particles, HUD, menu, and overlays;
+- manages the main game states: menu, intro, playing, falling, and game over;
+- handles player input, camera modes, shop preview rotation, score, coins,
+  speed control, crashes, edge falls, avalanche behaviour, wind, blizzard,
+  day/night cycle, and speed-line effects;
+- runs the main animation loop and coordinates updates between the different
+  gameplay modules.
+
+AI assistance: used mostly to help structure the main loop, separate responsibilities,
+and reason about some visual/gameplay systems such as camera smoothing, day/night
+interpolation, crash state transitions, and environmental effects.
+
+Manual work:
+The gameplay rules, constants, module integration, balancing, visual tuning, controls,
+menu behaviour, collision responses, and final testing were designed and adjusted
+manually for Echoes of Snow.
+*/
+
+
+
 import * as THREE from 'three';
 import {
     skier, animateSkier,
@@ -88,31 +114,19 @@ const CRASH_MIN_BODY_Y   = 0.03;
 // Day/night cycle length (seconds)
 const CYCLE_DURATION = 130;
 
-// Smooth ramp for the blizzard weather override. Mirrors how nightFactor
-// derives from sun intensity: a continuous 0..1 value rather than a snap, so
-// transitions in/out of the storm look like the weather front is moving in.
-// The target is itself distance-based (see computeBlizzardTarget) so this
-// blend rate only needs to mask discrete chunk-boundary transitions.
 const BLIZZARD_BLEND_RATE = 1.4;
 let blizzardFactor = 0;
 const tmpBlizzardColor = new THREE.Color();
 
-// Wind gust state machine. Each cycle is calm -> telegraph -> gust -> calm.
-// The telegraph phase emits the same streaks as the gust but applies no
-// force, giving the player a beat to read the incoming direction and brace
-// before the actual push lands. Parameters come from the active biome so
-// other future weather biomes can reuse the same controller.
 const windGust = {
     mode: 'calm',      // 'calm' | 'telegraph' | 'gust'
     timer: 0,          // seconds elapsed in the current mode
-    duration: 1.5,     // total length of the current mode
-    direction: 1,      // +1 or -1, sign of the lateral push (sampled at telegraph onset)
+    duration: 1.5,     
+    direction: 1,      // +1 or -1, sign of the lateral push
     peak: 0,           // peak |force| sampled from biome.windPeakForce
 };
 
-// Cadence timer for in-world wind streak spawning during a gust. Reset on
-// each spawn so the streaks arrive at irregular intervals instead of in
-// lockstep, which would read as a particle system.
+
 let windStreakSpawnTimer = 0;
 const WIND_STREAK_BURST_ON_START = 10;
 
@@ -121,8 +135,6 @@ function randInRange(min, max) {
 }
 
 // ---- Speed control: tuck (W) and snowplow (S) ----
-// W banks bonusSpeed permanently; S applies a multiplicative brake while held
-// and slowly bleeds bonusSpeed away
 const BOOST_ACCEL_INITIAL = 1.0;    // m/s^2 on first contact
 const BOOST_ACCEL_PEAK    = 4.0;    // m/s^2 once the hold ramp is full
 const BOOST_RAMP_TIME     = 1.5;    // seconds to reach the peak rate
@@ -133,8 +145,6 @@ const SPEED_FLOOR       = SPEED_INITIAL * 0.5;
 const INPUT_SMOOTHING   = 6.0;      // exponential smoothing for boost/brake amounts
 
 // ---- Avalanche gap: spring anchored at GAP_DEFAULT ----
-// W pushes the gap out, S pulls it in, restoring force biases back to default
-// so S always has bite no matter how much bonusSpeed has been banked
 const GAP_DEFAULT      = FRONT_DISTANCE;
 const GAP_MAX          = 28.0;
 const GAP_DEATH        = 2.0;             // crossing this triggers the avalanche fall
@@ -177,10 +187,7 @@ const SPEED_LINE_SPEED_MUL_MAX  = 1.30;
 let score     = 0;
 let elapsed   = 0;
 let gameSpeed = SPEED_INITIAL;
-// 'menu' -> 'intro' -> 'playing' -> 'falling'? -> 'gameover'
-// 'intro' is a short camera pan during which the skier is already skiing;
-// gameplay input only enables when it ends.
-let gameState = 'menu';
+let gameState = 'menu';         // 'menu' -> 'intro' -> 'playing' -> 'falling'? -> 'gameover'
 let lastTime  = performance.now();
 let introTimer = 0;
 const INTRO_PAN_DURATION = 1.5;
@@ -200,34 +207,20 @@ let fallStartRotY = 0;
 let fallStartRotZ = 0;
 
 const keys = { left: false, right: false, boost: false, brake: false };
-
-// Settings — start position in the day/night cycle, mutable from the menu slider
 let startCycleOffset = 0.12;
-
-// Smoothed 0..1 pose intensities driven by the raw keys
 let boostAmount = 0;
 let brakeAmount = 0;
-
-// Permanent speed accumulator built up by W, only reset on restart
-let bonusSpeed = 0;
-
-// Continuous time W has been held with no S, feeds the boost ramp
-let boostHoldTime = 0;
-
-// Spring-driven gap; forced toward 0 during an avalanche fall
+let bonusSpeed = 0; // Permanent speed accumulator built up by W, only reset on restart
+let boostHoldTime = 0; 
 let avalancheGap = GAP_DEFAULT;
-
 let camMode = 0;                    // 0 = behind, 1 = first-person, 2 = facing
 const camLook = new THREE.Vector3(0, 0.8, 4);  // smoothed lookAt target
 const skierBounds = new THREE.Box3();
 
-// Shop preview state: when active the camera pans to a frontal close-up of
-// the skier, the shop spotlight turns on, and pointer drag rotates the model
 let shopActive = false;
 let shopDragging = false;
 let shopLastPointerX = 0;
 let shopYaw = 0;
-
 
 // ============================================================
 //  RENDERER, SCENE, CAMERA
@@ -282,16 +275,12 @@ sunLight.target = sunTarget;
 
 scene.add(sunLight);
 
-// Shop spotlight: short-range point light placed just in front of the skier so
-// only the model is lit while previewing items. Activated when the shop screen
-// is open; the rest of the scene continues to follow the day/night cycle.
 const shopSpot = new THREE.PointLight(0xffeedd, 6.0, 5.5, 1.6);
 shopSpot.position.set(0.6, 2.0, 1.6);
 shopSpot.visible = false;
 scene.add(shopSpot);
 
-// Soft rim from the opposite side so the back/left of the skier isn't pitch
-// black under the spotlight. Same on/off gating as the spot.
+
 const shopRim = new THREE.PointLight(0x88aacc, 2.5, 5.0, 1.6);
 shopRim.position.set(-0.8, 1.6, -1.0);
 shopRim.visible = false;
@@ -315,6 +304,8 @@ for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
 // Normalized t in [0,1) drives keyframe interpolation of sky/fog colour,
 // sun colour and orbit, ambient lighting, and fog distances. Night is
 // compressed to roughly 30 s of the cycle
+//
+// AI was used for the colors
 const CYCLE_KEYFRAMES = [
     { time: 0.00, skyColor: c(0x1a1a35), sunColor: c(0x6680aa), sunIntensity: 0.55, ambientColor: c(0x3a3a60), ambientIntensity: 0.65, fogNear: 20, fogFar: 140 },
     { time: 0.05, skyColor: c(0x252540), sunColor: c(0x7888aa), sunIntensity: 0.60, ambientColor: c(0x353560), ambientIntensity: 0.62, fogNear: 22, fogFar: 150 },
@@ -338,8 +329,6 @@ const tmpSun = new THREE.Color();
 const tmpAmb = new THREE.Color();
 
 
-
-
 // Radial gradient texture for the sun/moon glow sprite
 function makeGlowTexture() {
     const size = 256;
@@ -361,7 +350,6 @@ function makeGlowTexture() {
 
     return new THREE.CanvasTexture(canvas);
 }
-
 
 
 // ============================================================
@@ -445,7 +433,10 @@ function sampleCycle(normalizedTime) {
 }
 
 
-// Apply the cycle state to lights, fog, sky, and the sun/moon arc
+
+// AI-assisted block:
+// AI helped organize the update logic for interpolating lighting, fog, and
+// sun/moon positions over time. The final values were manually tested and tuned.
 function updateCycle(normalizedTime) {
     const state = sampleCycle(normalizedTime);
 
@@ -517,11 +508,6 @@ function updateCycle(normalizedTime) {
 // ============================================================
 //  TERRAIN & TEXTURES
 // ============================================================
-
-// Tilted mount so the skis sit flush on the slope. All the existing
-// skier.rotation logic (lean, crash pitch) still runs in the local frame.
-// position.y compensates for the leg-chain offset that left the skis
-// hovering above the snow once the tilt was applied
 const skierMount = new THREE.Group();
 skierMount.rotation.x = SLOPE_TILT;
 skierMount.position.y = -0.07;
@@ -541,31 +527,18 @@ for (let i = 0; i < chunks.length; i++) {
     }
 }
 
-// Background mountain ring; the main loop slides it along Z each frame
-const sceneryRing = createScenery(scene);
-
-// Powder cloud behind the skier; also masks chunk recycling in the rear cam
+const sceneryRing = createScenery(scene);           // Background mountain ring; the main loop slides it along Z each frame
 const avalanche = createAvalanche(scene);
-
-
 const blizzardEmitter = getBlizzardEmitter();
 scene.add(blizzardEmitter);
-
-// Separate emitter for the directional wind-streak sprites. World-anchored
-// so streaks fly past the skier in absolute terms instead of orbiting him.
 const windStreakEmitter = getWindStreakEmitter();
 scene.add(windStreakEmitter);
 
 
 // ============================================================
-//  SPEED LINES (2D canvas overlay above the WebGL viewport)
+//  SPEED LINES
 // ============================================================
-// Drawn on a UI canvas so the streaks are anchored to the camera, not the
-// scene. The pool is pre-allocated and only a clearRect + short strokes
-// run each frame, which is far cheaper than meshes in three.js
-
 const speedLineCanvas = document.createElement('canvas');
-// z-index 5 sits between the WebGL canvas and the HUD (10) / overlays (20, 30)
 speedLineCanvas.style.cssText =
     'position:fixed; inset:0; pointer-events:none; z-index:5;';
 document.body.appendChild(speedLineCanvas);
@@ -618,18 +591,16 @@ function respawnSpeedLine(line) {
 const speedLines = [];
 for (let i = 0; i < SPEED_LINE_COUNT; i++) {
     const line = {
-        // Stratified activation: density grows with gameSpeed, jitter avoids
-        // a visible ladder of streaks turning on at round numbers
         activationSpeed: SPEED_LINE_THRESHOLD_LO
             + (i / Math.max(1, SPEED_LINE_COUNT - 1))
               * (SPEED_LINE_THRESHOLD_HI - SPEED_LINE_THRESHOLD_LO)
             + (Math.random() - 0.5) * 1.5
     };
     respawnSpeedLine(line);
-    // Spread initial life phases so the field is already populated on frame 1
     line.life = Math.random();
     speedLines.push(line);
 }
+
 
 function updateSpeedLines(delta, currentSpeed) {
     const ctx = speedLineCtx;
@@ -779,10 +750,7 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Drag-to-rotate the skier while the shop is open. We listen on window so the
-// drag can start anywhere outside the panel (including on the skier itself,
-// which is rendered to the canvas behind the menu overlay). Pointer-down on an
-// interactive shop element is filtered out so cards and buttons still click.
+// Drag-to-rotate the skier while the shop is open
 const SHOP_UI_SELECTOR = '.shop-tab, .shop-item, .shop-confirm-btn, .menu-back, .menu-panel-title';
 window.addEventListener('pointerdown', (e) => {
     if (!shopActive) return;
@@ -812,8 +780,6 @@ function getCycleT() {
     return ((elapsed / CYCLE_DURATION) + startCycleOffset) % 1.0;
 }
 
-// Night-eligible window starts at sunset so lit obstacles are already on the
-// slope by the time full darkness arrives
 function isNightTime() {
     const t = getCycleT();
     return t > 0.58 || t < 0.15;
@@ -826,11 +792,6 @@ function onChunkRecycle(chunk) {
     populateChunk(chunk, CHUNK_LENGTH, CHUNK_WIDTH, score, isNightTime(), biomeName);
 }
 
-
-// Returns the biome whose chunk currently straddles the skier's origin. Used
-// by per-frame hooks (wind state, fog override) that need the active biome's
-// full property bag. Falls back to BIOME_BASE during the transient frame when
-// no chunk straddles z=0 (chunk recycling).
 function getCurrentBiome() {
     for (const c of chunks) {
         if (c.position.z > -CHUNK_LENGTH / 2 && c.position.z <= CHUNK_LENGTH / 2) {
@@ -840,11 +801,10 @@ function getCurrentBiome() {
     return getBiome(BIOME_BASE);
 }
 
-// Distance-based target for blizzardFactor. Scans the chunk pool for the
-// nearest blizzard chunk ahead of (or under) the skier and converts the gap
-// to its near edge into a 0..1 ramp. The result is the storm "front" being
-// visible long before the player enters it: fog tightens and snow particles
-// fade in as the distance closes.
+// AI-done block:
+// AI helped structure the blizzard blending logic so the storm can fade in and
+// out based on the skier's distance to blizzard chunks. The final gameplay
+// integration and distances were adjusted manually.
 function computeBlizzardTarget() {
     const biome   = getBiome(BIOME_BLIZZARD);
     const approach = biome.windApproachDist || 80;
@@ -869,11 +829,9 @@ function computeBlizzardTarget() {
     return best;
 }
 
-// Advance the gust state machine and return the lateral force for this tick.
-// On every mode transition a fresh duration is sampled from the biome's
-// range; the direction and peak are sampled once at telegraph onset and
-// carried into the gust phase. Only the 'gust' phase applies force — calm
-// and telegraph both return 0.
+// AI-done block:
+// AI helped structure the wind gust state machine: calm, telegraph, and gust.
+// The force values, timing ranges, and biome integration were manually tuned.
 function updateWindGust(delta, biome) {
     if (!biome.windPeakForce) {
         windGust.mode = 'calm';
@@ -885,8 +843,6 @@ function updateWindGust(delta, biome) {
     if (windGust.timer >= windGust.duration) {
         windGust.timer = 0;
         if (windGust.mode === 'calm') {
-            // Calm → telegraph: pick the new gust's direction now so the
-            // streaks that spawn this phase already match what will hit
             windGust.mode      = 'telegraph';
             windGust.duration  = randInRange(biome.windTelegraphMin, biome.windTelegraphMax);
             windGust.direction = Math.random() < 0.5 ? -1 : 1;
@@ -936,6 +892,9 @@ function beginEdgeFall() {
     fallStartRotZ = skier.rotation.z;
 }
 
+// AI-assisted block:
+// AI helped discuss the crash-state structure and how to derive a fall direction
+// from the collision normal
 function beginCollisionFall(collision) {
     const impactSide = Math.abs(collision.normalX) > 0.08
         ? Math.sign(collision.normalX)
@@ -971,8 +930,6 @@ function beginCollisionFall(collision) {
     });
 }
 
-// Triggered when the avalanche gap collapses below GAP_DEATH; the body is
-// pitched forward as if hit from behind and the cloud catches up
 function beginAvalancheFall() {
     gameState = 'falling';
     snowTrails.pause();
@@ -1002,8 +959,6 @@ function keepCrashBodyAboveSnow() {
 
 
 function startGame() {
-    // Enter the short pan state. The skier starts skiing immediately so the
-    // handoff into 'playing' just unlocks input — no jarring start.
     gameState = 'intro';
     introTimer = 0;
     lastTime   = performance.now();
@@ -1039,8 +994,6 @@ function startMenuMode() {
     resetSkierEquipment();
     hud.style.display = 'none';
     menu.show();
-    // Low front-right preview: skier silhouettes against the sky, framed
-    // on screen right so the menu pill doesn't clash with the model
     camera.position.set(3.0, 1.0, 3.5);
     camLook.set(-1.8, 1.4, 0);
     camera.lookAt(camLook);
@@ -1135,24 +1088,12 @@ function animate(now) {
 
     const delta = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
-
-    // The current biome, this frame's wind force, and the blizzardFactor are
-    // computed once so the skier-side push, the fog override, the HUD, and
-    // the particle emitter all see exactly the same value.
     const tickBiome = getCurrentBiome();
 
-    // Wind is intermittent: gusts of random direction and length separated by
-    // calm intervals. Updating the state machine each frame regardless of
-    // gameState keeps timers consistent if the storm front passes during a
-    // pause or a fall (no visual jolt on resume).
     const gustModeBefore = windGust.mode;
     const tickWindX = updateWindGust(delta, tickBiome);
     const telegraphJustStarted = (gustModeBefore === 'calm' && windGust.mode === 'telegraph');
 
-    // In-world wind indicator. Streaks spawn during BOTH the telegraph and
-    // gust phases, so the player sees air rushing past for ~0.7-1.1 s before
-    // the actual push lands and has time to brace. Calm intervals spawn
-    // nothing, so the storm reads as breath-in / breath-out.
     if (telegraphJustStarted) {
         for (let i = 0; i < WIND_STREAK_BURST_ON_START; i++) {
             spawnWindStreak(skier.position.x, skier.position.z, windGust.direction, 0.85);
@@ -1162,10 +1103,6 @@ function animate(now) {
     if (windGust.mode === 'telegraph' || windGust.mode === 'gust') {
         windStreakSpawnTimer -= delta;
         if (windStreakSpawnTimer <= 0) {
-            // During telegraph there is no tickWindX to read; fall back to a
-            // steady 0.75 magnitude so streaks stay bold. During the gust the
-            // magnitude tracks the current force, so streaks visibly intensify
-            // through the peak.
             const mag = windGust.mode === 'gust' && windGust.peak > 0
                 ? Math.max(0.55, Math.abs(tickWindX) / windGust.peak)
                 : 0.75;
@@ -1174,10 +1111,6 @@ function animate(now) {
         }
     }
 
-    // Distance-based target so the storm fades in while still ahead, instead
-    // of the factor snapping to 1 when the player enters the chunk. The
-    // exponential blend on top hides any discrete jumps when a new blizzard
-    // chunk is spawned at the far edge of the pool.
     const blizzardTarget = computeBlizzardTarget();
     const blizzardSmooth = 1 - Math.exp(-BLIZZARD_BLEND_RATE * delta);
     blizzardFactor += (blizzardTarget - blizzardFactor) * blizzardSmooth;
@@ -1201,6 +1134,7 @@ function animate(now) {
         animateSkierIdle(now * 0.001);
         if (shopActive) skier.rotation.y = shopYaw;
     }
+
     // -- Intro: short camera pan, skier already skiing for a clean pickup --
     else if (gameState === 'intro') {
         introTimer += delta;
@@ -1215,6 +1149,7 @@ function animate(now) {
             lastTime = performance.now();
         }
     }
+
     // -- Game update (only while playing) --
     else if (gameState === 'playing') {
         elapsed  += delta;
@@ -1393,9 +1328,6 @@ function animate(now) {
 
     updateCycle(cycleT);
 
-    // Blizzard fog override is layered on top of the day/night fog state.
-    // lerp() between the cycle's values and the storm's target values gives a
-    // smooth front rolling in/out without snapping the draw distance.
     if (blizzardFactor > 0.001 && tickBiome.fogFarOverride !== undefined) {
         scene.fog.near = THREE.MathUtils.lerp(scene.fog.near, tickBiome.fogNearOverride, blizzardFactor);
         scene.fog.far  = THREE.MathUtils.lerp(scene.fog.far,  tickBiome.fogFarOverride,  blizzardFactor);
@@ -1404,15 +1336,11 @@ function animate(now) {
         scene.background.lerp(tmpBlizzardColor, blizzardFactor);
     }
 
-    // Inverse of the sun: 0 by day, 1 once the sun drops below ~0.5 intensity
-    // Threshold scaled to the cycle's new sun minimum (~0.55) so lanterns,
-    // fireflies and coin glow still fire at night without coming on at dusk
+k
     const nightFactor = Math.max(0, 1.0 - sunLight.intensity / 1.0);
 
     updateCoins(chunks, now * 0.001, nightFactor);
 
-    // Emissive fades in sync with the pool lights so visual glow and
-    // illumination always agree
     lanternMat.emissiveIntensity      = nightFactor * 1.5;
     lamppostBulbMat.emissiveIntensity = nightFactor * 2.5;
 
@@ -1420,8 +1348,7 @@ function animate(now) {
     updateBlizzard(delta, blizzardFactor, tickWindX);
     updateWindStreaks(delta, blizzardFactor);
 
-    // Audio mix: only the gust phase drives the freezing-wind layer; telegraph
-    // and calm both report 0 so the storm "breathes" instead of being constant.
+
     const gustStrength = (windGust.mode === 'gust' && windGust.peak > 0)
         ? Math.max(0, Math.min(1, Math.abs(tickWindX) / windGust.peak))
         : 0;

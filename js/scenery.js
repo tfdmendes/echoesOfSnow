@@ -1,7 +1,17 @@
+/*
+Author: Tiago Mendes 119378
+
+Background scenery: the valley floor, a main ring of distant peaks, and three
+tiers of foothills on the sides of the ridge. Mountains are procedural cones
+with randomized vertices, colored by height (rock to snow) and merged into a
+single mesh for performance. The ring follows the skier to keep the horizon filled
+
+None of this code was done with AI
+*/
+
 import * as THREE from 'three';
 
-// Background scenery: a main ring of distant peaks plus three tiers of
-// foothills sitting in the valley on the sides of the ridge
+
 
 // Valley floor Y, kept in sync with SLOPE_DROP in terrain.js
 const VALLEY_FLOOR_Y = -45;
@@ -149,30 +159,30 @@ function createMountainGeometry(height, radius) {
 
 
     const colorAttribute = new Float32Array(pos.count * 3);
-    const rock    = new THREE.Color(0x3a3530);
-    const midRock = new THREE.Color(0x6e6864);
-    const snow    = new THREE.Color(0xf4f7fa);
+    const rock    = new THREE.Color(0x3a3530);          // dark rock (base)
+    const midRock = new THREE.Color(0x6e6864);          
+    const snow    = new THREE.Color(0xf4f7fa);          // white snow (top)
     const tmpColor = new THREE.Color();
 
     const snowLine = 0.65;
 
     for (let i = 0; i < pos.count; i++) {
         const yLocal = pos.getY(i);
-        const t = (yLocal + height / 2) / height;          // 0 at base, 1 at apex
+        const t = (yLocal + height / 2) / height;          // height normalized 0 at base, 1 at apex
 
         if (t >= snowLine) {
             const k = (t - snowLine) / (1 - snowLine);
-            tmpColor.copy(midRock).lerp(snow, k);
+            tmpColor.copy(midRock).lerp(snow, k);       // above the line: rock -> snow
         } else {
             const k = t / snowLine;
-            tmpColor.copy(rock).lerp(midRock, k);
+            tmpColor.copy(rock).lerp(midRock, k);       // below the line: dark rock -> lighter rock
         }
 
         colorAttribute[i * 3]     = tmpColor.r;
         colorAttribute[i * 3 + 1] = tmpColor.g;
         colorAttribute[i * 3 + 2] = tmpColor.b;
     }
-    geo.setAttribute('color', new THREE.BufferAttribute(colorAttribute, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colorAttribute, 3));    // Attach colors to the mesh
 
     return geo.toNonIndexed();
 }

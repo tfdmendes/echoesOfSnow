@@ -1,8 +1,22 @@
+/*
+Author: Tiago Mendes 119378             
+        OpenAI ChatGPT 5.5 Thinking  
+
+- loads texture files using THREE.TextureLoader;
+- caches already loaded textures to avoid loading the same file multiple times;
+- configures wrapping, repetition, anisotropy and color space;
+- applies diffuse maps and normal maps to Three.js materials;
+- stores the texture definitions used by the skier, snow, bark and fabric materials.
+
+AI assistance: to reutilize the texture logic and avoiding repeated texture setup
+*/
+
 import * as THREE from 'three';
 
 const loader = new THREE.TextureLoader();
 const cache = new Map();
 
+// Done with AI
 function load(path, { repeat = [1, 1], srgb = true, anisotropy = 8 } = {}) {
     const key = `${path}|${repeat[0]}|${repeat[1]}|${srgb}|${anisotropy}`;
     if (cache.has(key)) return cache.get(key);
@@ -14,6 +28,7 @@ function load(path, { repeat = [1, 1], srgb = true, anisotropy = 8 } = {}) {
     cache.set(key, tex);
     return tex;
 }
+
 
 export function applyMaterialTextures(mat, def, overrides = {}) {
     if (!def) return;
@@ -32,6 +47,7 @@ export function applyMaterialTextures(mat, def, overrides = {}) {
     }
     mat.needsUpdate = true;
 }
+
 
 export const TEX = {
     jacketQuilted: {

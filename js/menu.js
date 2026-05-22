@@ -1,3 +1,14 @@
+/*
+Author: Anthropic Claude Sonnet 4.6
+
+The CSS in this file was developed with the assistance of Claude Sonnet 4.6.
+I provided the color palette and an initial hand-drawn notebook sketch describing
+the intended menu layout and visual style
+
+Later, I made punctual adjustments and minor refinements, but the main CSS
+structure and styling were generated with AI assistance.
+*/
+
 import { playUiClick, playMenuMusic, stopMenuMusic } from './audio.js';
 import {
     CHARACTERS, JACKETS, SKIS,

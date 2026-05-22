@@ -1,3 +1,27 @@
+/*
+Author: Tiago Mendes 119378         
+        OpenAI ChatGPT 5.5 Thinking 
+
+Terrain and endless-slope system for Echoes of Snow.
+
+This module builds and manages the ski slope:
+- creates reusable terrain chunks for the endless downhill track;
+- defines the playable ridge width and side fall boundaries;
+- builds lateral slope geometry so the track connects visually to the valley floor;
+- creates boundary flags using grouped Three.js primitives;
+- recycles chunks as the skier moves forward to simulate an infinite slope.
+
+AI assistance:
+AI was used mainly to discuss the terrain architecture, chunk recycling strategy,
+and how to structure the custom geometry used for the side slopes and flags.
+
+Manual work:
+The slope dimensions, playable width, chunk length, flag spacing, materials,
+visual proportions and integration with obstacles/biomes were adjusted and tested
+manually for Echoes of Snow.
+*/
+
+
 import * as THREE from 'three';
 import { createCircleCollider, createOrientedBoxCollider } from './collision.js';
 import { getBiome, BIOME_BASE, BIOME_FOREST } from './biomes.js';

@@ -1,5 +1,16 @@
-// Ground-plane collision: broad-phase bounding circle + narrow-phase
-// circle/oriented-box test, returns a contact normal on hit
+/*
+Author: Tiago Mendes 119378         
+        OpenAI ChatGPT 5.5 Thinking 
+
+This module defines simple ground-plane colliders:
+- circular colliders for rounded obstacles;
+- oriented box colliders for rectangular obstacles;
+- broad-phase rejection using bounding circles;
+- narrow-phase collision tests returning a contact normal and penetration depth.
+
+AI was used mainly to discuss the collision-system architecture, the mathematical
+structure of the circle/box tests, and how to organize the module clearly
+*/
 
 export const SKIER_RADIUS = 0.45;
 

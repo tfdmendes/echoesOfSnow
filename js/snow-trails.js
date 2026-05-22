@@ -1,3 +1,25 @@
+/*
+Author: Tiago Mendes 119378         
+        OpenAI ChatGPT 5.5 Thinking 
+
+This module draws the marks left by the skier on the snow:
+- creates one dynamic trail layer per terrain chunk;
+- stores trail vertices in a reusable BufferGeometry;
+- writes small quad segments between consecutive ski contact points;
+- increases trail width when the skier is braking / snowplowing;
+- clears trail data when chunks are recycled by the endless terrain system.
+
+AI assistance:
+AI was used mainly to discuss the architecture of the trail system and the use of
+dynamic BufferGeometry instead of creating many separate meshes every frame.
+
+Manual work:
+The trail width, opacity, segment limits, brake response, chunk integration and
+visual tuning were adjusted and tested manually
+
+Code blocks done with the assistance of AI commented below
+*/
+
 import * as THREE from 'three';
 import { CHUNK_LENGTH, CHUNK_WIDTH } from './terrain.js';
 
@@ -23,6 +45,9 @@ const trailMaterial = new THREE.MeshBasicMaterial({
     polygonOffsetUnits: -2
 });
 
+// AI-assisted architecture:
+// This layer uses a reusable dynamic BufferGeometry so ski marks can be updated
+// efficiently without creating new meshes every frame.
 function createTrailLayer(chunk) {
     const positions = new Float32Array(SEGMENTS_PER_CHUNK * 4 * 3);
     const indices = new Uint16Array(SEGMENTS_PER_CHUNK * 6);
@@ -89,6 +114,9 @@ function findChunkForContact(chunks, contact, targetLocal) {
     return null;
 }
 
+
+// AI-assisted logic:
+// Each ski mark is stored as a small quad made from four vertices and two triangles.
 function addSegment(layer, from, to, width) {
     const dx = to.x - from.x;
     const dz = to.z - from.z;
@@ -122,6 +150,7 @@ function addSegment(layer, from, to, width) {
     layer.positionAttr.needsUpdate = true;
     return true;
 }
+
 
 export function createSnowTrails(chunks) {
     const localScratch = new THREE.Vector3();

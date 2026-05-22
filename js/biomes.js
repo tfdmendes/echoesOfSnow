@@ -1,3 +1,18 @@
+/*
+Author: Tiago Mendes 119378
+
+This module defines the different gameplay biomes used:
+- base biome, with balanced obstacle placement;
+- forest biome, with higher tree density;
+- blizzard biome, with reduced visibility, stronger wind and different obstacle weights.
+
+Each biome stores gameplay parameters such as obstacle density, coin density,
+minimum spacing, obstacle type weights, night-time weights and, for the blizzard,
+wind and fog settings.
+*/
+
+
+
 export const BIOME_BASE     = 'base';
 export const BIOME_FOREST   = 'forest';
 export const BIOME_BLIZZARD = 'blizzard';

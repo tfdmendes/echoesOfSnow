@@ -1,3 +1,20 @@
+/*
+Author: Tiago Mendes 119378
+        OpenAI ChatGPT 5.5 Thinking
+
+Coin system for Echoes of Snow.
+
+This module manages the collectible snowflake coins used by the game:
+- builds the coin geometry procedurally using small Three.js primitives;
+- stores wallet, lifetime coins and best run values in localStorage;
+- places coins inside terrain chunks while avoiding obstacles;
+- checks if the skier is close enough to collect a coin;
+- updates coin animation, including bobbing, spinning and emissive intensity.
+
+AI-assisted code blocks are commented below
+*/
+
+
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getBiome } from './biomes.js';
@@ -22,7 +39,7 @@ const COIN_SELF_SPACING = 1.2;
 const COIN_PLACEMENT_ATTEMPTS = 3;
 const COIN_EDGE_MARGIN = 2.5;
 
-
+// AI-assisted block:
 function buildSnowflakeGeometry() {
     const armLength   = 0.50;
     const armRadius   = 0.045;
@@ -167,7 +184,8 @@ export function spend(amount) {
     return true;
 }
 
-
+// AI-assisted logic:
+// Rejection sampling used to place coins while keeping distance from obstacles and other coins.
 function rejectionSample(halfW, halfL, obstacles, placed) {
     for (let attempt = 0; attempt < COIN_PLACEMENT_ATTEMPTS; attempt++) {
         const lx = (Math.random() * 2 - 1) * halfW;

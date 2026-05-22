@@ -1,3 +1,27 @@
+/*
+Author: Tiago Mendes 119378
+        Anthropic Sonnet 4.6
+
+Terrain and endless-slope system
+
+This module builds and manages the ski slope:
+- creates reusable terrain chunks for the endless downhill track;
+- defines the playable ridge width and side fall boundaries;
+- builds lateral slope geometry so the track connects visually to the valley floor;
+- creates boundary flags using grouped Three.js primitives;
+- recycles chunks as the skier moves forward to simulate an infinite slope.
+
+AI assistance:
+AI was used mainly to discuss the terrain architecture, chunk recycling strategy,
+and how to structure the custom geometry used for the side slopes and flags.
+
+Manual work:
+The slope dimensions, playable width, chunk length, flag spacing, materials,
+visual proportions and integration with obstacles/biomes were adjusted and tested
+manually for Echoes of Snow.
+*/
+
+
 import * as THREE from 'three';
 
 // POOL_SIZE * CHUNK_LENGTH must exceed the camera far plane (600)
@@ -52,7 +76,9 @@ const flagRedMat   = new THREE.MeshPhongMaterial({ color: 0xd4262a, side: THREE.
 const flagBlueMat  = new THREE.MeshPhongMaterial({ color: 0x2a50c8, side: THREE.DoubleSide, shininess: 8 });
 
 
-// Tapered strip from pole (t=0) to tip (t=1) with droop and a baked-in wave
+// AI-assisted geometry:
+// Custom BufferGeometry for a small tapered flag cloth, with a baked-in wave
+// so the boundary markers look less flat.
 function buildPennantGeometry() {
     const len     = 0.95;
     const height  = 0.45;
@@ -94,8 +120,9 @@ function buildPennantGeometry() {
 
 
 
-// PlaneGeometry whose outer vertices get pushed down so it forms the slope
-// flank when rotated flat
+// AI-assisted geometry:
+// Custom slope mesh built by modifying PlaneGeometry vertices, creating a smooth
+// transition from the playable ridge down to the valley floor.
 function buildSlopeGeometry() {
     const widthSegments  = 14;
     const heightSegments = 12;
@@ -147,7 +174,9 @@ function createFlag(colorMat, clothDirection) {
 
 
 
-// Playable ridge plane + left slope + right slope + flags
+// AI-assisted architecture:
+// Recycles terrain chunks instead of creating new ones continuously, which keeps
+// the endless slope cheaper to render and update.
 function createChunk() {
     const group = new THREE.Group();
 

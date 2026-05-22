@@ -1,3 +1,26 @@
+/*
+Author: Tiago Mendes 119378         
+        OpenAI ChatGPT 5.5 Thinking 
+
+This module defines the skier character model and its animation logic:
+- builds the skier using Three.js primitive meshes and grouped body parts;
+- manages the base skiing pose, turning lean, tuck, snowplow, idle, and crash poses;
+- handles visible equipment such as skis, poles, hats, goggles, and plank variants;
+- updates released equipment after a collision using simple gravity, bounce, drag,
+  and angular motion;
+- exposes skier appearance configuration used by the shop system.
+
+AI assistance: used mainly to discuss the character hierarchy, animation structure,
+pose transitions, and small physics ideas for released equipment. The more complex
+parts were reviewed and adapted manually so they fit the actual gameplay.
+
+Manual work:
+The visual style, proportions, equipment variants, gameplay integration, shop
+appearance options, collision/fall behaviour, and final tuning were implemented,
+tested, and adjusted manually for Echoes of Snow.
+*/
+
+
 import * as THREE from 'three';
 import { TEX, applyMaterialTextures } from './textures.js';
 
@@ -492,6 +515,12 @@ const STICK_ARM_Z = [0.12, 0.20];
 const STICK_FOREARM_X = [-0.35, -0.10];
 const STICK_POLE_X = [0.05, 0.80];
 
+
+
+// AI-assisted block:
+// AI was used to help structure the pose animation logic and the relationship
+// between boost, braking, turning lean, leg compression, and pole movement.
+// The animation constants and final visual tuning were manually adjusted.
 export function animateSkier(time, controls = {}) {
     poseTime = time;
 
@@ -586,6 +615,11 @@ export function resetSkierEquipment() {
     }
 }
 
+
+// AI-done block:
+// The idea for detached equipment behaviour was discussed with AI, mainly the
+// use of simple velocity, angular velocity, gravity, bounce, and drag after a
+// crash. The values and gameplay behaviour were tuned manually.
 export function releaseSkierEquipment(sceneRoot, impact = {}) {
     let normalX = impact.normalX ?? 0;
     let normalZ = impact.normalZ ?? -1;
@@ -626,6 +660,11 @@ export function releaseSkierEquipment(sceneRoot, impact = {}) {
     }
 }
 
+
+// AI-done block:
+// This update step uses a simple hand-made physics approximation for released
+// skis and poles. AI helped with the structure, but the final constants and
+// behaviour were adjusted manually for the game feel.
 export function updateReleasedEquipment(delta) {
     for (const part of equipmentParts) {
         if (!part.released) continue;

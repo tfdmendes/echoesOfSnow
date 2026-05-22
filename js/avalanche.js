@@ -1,3 +1,22 @@
+/*
+Author: Tiago Mendes 119378    
+        Anthropic Claude Opus 4.6
+        Reddit
+        StackOverflow
+        Game I saw online - https://snow-scene-particles.vercel.app/
+
+This module creates and updates the avalanche that follows the skier:
+- builds layered snow veils using semi-transparent planes;
+- generates procedural powder textures with HTML canvas;
+- adds snow billboards and particles to create volume and motion;
+- keeps the avalanche positioned behind the skier at a configurable distance;
+- animates opacity, movement and particle drift over time.
+
+AI assistance:
+AI was used mainly to discuss the visual architecture of the avalanche effect
+*/
+
+
 import * as THREE from 'three';
 import { CHUNK_WIDTH } from './terrain.js';
 
@@ -34,6 +53,10 @@ function topProfile(xNorm, time = 0) {
     return 2.65 + centerLift * 3.45 + wobble;
 }
 
+
+// AI-assisted visual technique:
+// Procedural canvas texture used to create soft snow/powder sprites without
+// relying on external image files.
 function makePowderTexture(size = 160) {
     const canvas = document.createElement('canvas');
     canvas.width = size;
@@ -88,6 +111,11 @@ function makePowderTexture(size = 160) {
     return texture;
 }
 
+
+
+// AI-assisted visual technique:
+// Procedural alpha texture for the avalanche veil layers, giving the cloud an
+// irregular snow shape instead of a flat rectangle.
 function makeVeilTexture(seed, rearDensity = 0) {
     const width = 512;
     const height = 256;
@@ -167,6 +195,8 @@ function makeVeilTexture(seed, rearDensity = 0) {
     return texture;
 }
 
+
+
 function createVeil(index) {
     const layerT = index / (VEIL_COUNT - 1);
     const centerBias = 1 - Math.abs(layerT - 0.5) * 2;
@@ -195,6 +225,10 @@ function createVeil(index) {
     return mesh;
 }
 
+
+// AI-assisted visual technique:
+// Billboard sprites are distributed through the avalanche volume to make the snow
+// cloud look thicker and less flat.
 function createBillboards(texture) {
     const group = new THREE.Group();
 

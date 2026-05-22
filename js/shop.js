@@ -1,3 +1,10 @@
+/*
+Author: Tiago Mendes 119378    
+        Claude Sonnet 4.6       
+
+    AI Assistance: Picked the colors and names for each outfit
+*/
+
 const SHOP_KEY = 'echoes-of-snow:shop';
 const SHOP_VERSION = 1;
 
