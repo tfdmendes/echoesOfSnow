@@ -1336,7 +1336,6 @@ function animate(now) {
         scene.background.lerp(tmpBlizzardColor, blizzardFactor);
     }
 
-k
     const nightFactor = Math.max(0, 1.0 - sunLight.intensity / 1.0);
 
     updateCoins(chunks, now * 0.001, nightFactor);
