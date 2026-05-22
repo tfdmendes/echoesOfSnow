@@ -61,7 +61,7 @@ export const BIOMES = {
     },
     [BIOME_BLIZZARD]: {
         name: BIOME_BLIZZARD,
-        spawnChance: 0.80,
+        spawnChance: 0.10,
         chunkSpan: 10,
         densityMultiplier: 0.7,
         coinDensityMultiplier: 1.4,
