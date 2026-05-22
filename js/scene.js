@@ -514,6 +514,16 @@ skierMount.position.y = -0.07;
 skierMount.add(skier);
 scene.add(skierMount);
 
+// First-person camera anchors live under skier so they inherit slope tilt + lean
+const fpEyeAnchor = new THREE.Object3D();
+fpEyeAnchor.position.set(0, 1.42, 0.20);
+skier.add(fpEyeAnchor);
+const fpLookAnchor = new THREE.Object3D();
+fpLookAnchor.position.set(0, 1.42, 12);
+skier.add(fpLookAnchor);
+const _fpEyeWorld  = new THREE.Vector3();
+const _fpLookWorld = new THREE.Vector3();
+
 const chunks = createTerrain(scene);
 const snowTrails = createSnowTrails(chunks);
 const skiTrailContacts = [];
@@ -1441,9 +1451,11 @@ function animate(now) {
                        z: -5.0 - speedFactor * 1.5 };
         targetLook = { x: skier.position.x * 0.6, y: 0.8, z: 4 };
     } else if (camMode === 1) {
-        // First-person
-        targetPos  = { x: skier.position.x, y: 1.2, z: 0.3 };
-        targetLook = { x: skier.position.x, y: 0.8, z: 10 };
+        // First-person: anchors are children of skier, so they carry slope tilt + lean
+        fpEyeAnchor.getWorldPosition(_fpEyeWorld);
+        fpLookAnchor.getWorldPosition(_fpLookWorld);
+        targetPos  = { x: _fpEyeWorld.x,  y: _fpEyeWorld.y,  z: _fpEyeWorld.z };
+        targetLook = { x: _fpLookWorld.x, y: _fpLookWorld.y, z: _fpLookWorld.z };
     } else {
         // Facing skier from the front
         targetPos  = { x: skier.position.x * 0.85,
