@@ -288,11 +288,14 @@ scene.add(shopRim);
 
 // PointLight pool reassigned to the closest lit obstacles each frame so the
 // scene avoids creating a light per obstacle (which would tank framerate)
-const NIGHT_LIGHT_COUNT = 8;
+const NIGHT_LIGHT_COUNT = 12;
 const nightLights = [];
 for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
-    const pl = new THREE.PointLight(0xffaa44, 0, 40, 1.2);
+    const pl = new THREE.PointLight(0xffaa44, 0, 90, 1.2);
     pl._fade = 0;
+    pl._id = null;
+    pl._lastX = 0;
+    pl._lastZ = 0;
     scene.add(pl);
     nightLights.push(pl);
 }
@@ -1372,17 +1375,20 @@ function animate(now) {
     });
 
     if (nightFactor > 0) {
-        // Lampposts sit higher and shine stronger than fence lanterns
-        const litPositions = [];
+        // Build candidate list with stable per-obstacle ids so a pool slot stays
+        // bound to one obstacle until it fades out — prevents teleport-pops when
+        // ranks shuffle or chunks recycle
+        const candidates = [];
         for (const chunk of chunks) {
             const obs = chunk.userData.obstacles || [];
-            for (const ob of obs) {
+            for (let i = 0; i < obs.length; i++) {
+                const ob = obs[i];
                 if (ob.mesh.userData.isLitFence) {
                     const wx = chunk.position.x + ob.localX;
                     const wz = chunk.position.z + ob.localZ;
                     const dx = skier.position.x - wx;
                     const dz = skier.position.z - wz;
-                    litPositions.push({ x: wx, z: wz, y: 1.1, intensity: 4.0, color: 0xffaa44, dist: dx * dx + dz * dz });
+                    candidates.push({ id: chunk.id + ':f:' + i, x: wx, z: wz, y: 1.1, intensity: 4.0, color: 0xffaa44, dist: dx * dx + dz * dz });
                 }
                 if (ob.mesh.userData.isLamppost) {
                     const offsetX = ob.mesh.userData.lampOffsetX || 0;
@@ -1390,7 +1396,7 @@ function animate(now) {
                     const wz = chunk.position.z + ob.localZ;
                     const dx = skier.position.x - wx;
                     const dz = skier.position.z - wz;
-                    litPositions.push({ x: wx, z: wz, y: 4.2, intensity: 6.0, color: 0xffaa44, dist: dx * dx + dz * dz });
+                    candidates.push({ id: chunk.id + ':l:' + i, x: wx, z: wz, y: 4.2, intensity: 6.0, color: 0xffaa44, dist: dx * dx + dz * dz });
                 }
             }
             const ffl = chunk.userData.fireflyLightLocal;
@@ -1399,26 +1405,75 @@ function animate(now) {
                 const wz = chunk.position.z + ffl.z;
                 const dx = skier.position.x - wx;
                 const dz = skier.position.z - wz;
-                litPositions.push({ x: wx, z: wz, y: ffl.y, intensity: 3.5, color: 0xffd060, dist: dx * dx + dz * dz });
+                candidates.push({ id: chunk.id + ':ff', x: wx, z: wz, y: ffl.y, intensity: 3.5, color: 0xffd060, dist: dx * dx + dz * dz });
             }
         }
 
-        litPositions.sort((a, b) => a.dist - b.dist);
+        // Hysteresis: assigned slots may keep their candidate up to rank
+        // NIGHT_LIGHT_COUNT + 8 before being orphaned, but only the closest
+        // NIGHT_LIGHT_COUNT can claim a free slot
+        candidates.sort((a, b) => a.dist - b.dist);
+        const keepLimit = Math.min(candidates.length, NIGHT_LIGHT_COUNT + 8);
+        const candById = new Map();
+        for (let i = 0; i < keepLimit; i++) {
+            candidates[i]._rank = i;
+            candById.set(candidates[i].id, candidates[i]);
+        }
 
+        const fadeAlpha = 1 - Math.exp(-3 * delta);
+        const claimed = new Set();
+
+        // Pass A: refresh slots whose id is still a live candidate
         for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
             const pl = nightLights[i];
-            if (i < litPositions.length) {
-                const lp = litPositions[i];
-                pl.position.set(lp.x, lp.y, lp.z);
-                pl.color.setHex(lp.color);
-
-                const target = nightFactor * lp.intensity;
-                pl._fade += (target - pl._fade) * (1 - Math.exp(-3 * delta));
+            if (pl._id === null) continue;
+            const cand = candById.get(pl._id);
+            // Guard against chunk recycle: if the same id maps to a wildly
+            // different world position, treat as a different obstacle
+            const matches = cand
+                && Math.abs(cand.x - pl._lastX) < 5
+                && Math.abs(cand.z - pl._lastZ) < 5;
+            if (matches) {
+                pl.position.set(cand.x, cand.y, cand.z);
+                pl.color.setHex(cand.color);
+                pl._lastX = cand.x;
+                pl._lastZ = cand.z;
+                // Snap to target so distance falloff (PointLight.distance) is
+                // the only thing the player sees ramp as the obstacle nears
+                pl._fade = nightFactor * cand.intensity;
                 pl.intensity = pl._fade;
+                claimed.add(cand.id);
             } else {
-                pl._fade *= Math.exp(-3 * delta);
+                // Orphaned: fade out in place, release slot once dark
+                pl._fade += (0 - pl._fade) * fadeAlpha;
                 pl.intensity = pl._fade;
+                if (pl._fade < 0.02) {
+                    pl._fade = 0;
+                    pl.intensity = 0;
+                    pl._id = null;
+                }
             }
+        }
+
+        // Pass B: hand free slots to the closest unclaimed candidates
+        let nextCand = 0;
+        const fillLimit = Math.min(candidates.length, NIGHT_LIGHT_COUNT);
+        for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
+            const pl = nightLights[i];
+            if (pl._id !== null) continue;
+            while (nextCand < fillLimit && claimed.has(candidates[nextCand].id)) nextCand++;
+            if (nextCand >= fillLimit) break;
+            const cand = candidates[nextCand++];
+            pl._id = cand.id;
+            pl._lastX = cand.x;
+            pl._lastZ = cand.z;
+            pl.position.set(cand.x, cand.y, cand.z);
+            pl.color.setHex(cand.color);
+            // Snap on first assignment — distance attenuation hides the snap
+            // until the skier closes the gap
+            pl._fade = nightFactor * cand.intensity;
+            pl.intensity = pl._fade;
+            claimed.add(cand.id);
         }
     } else {
         // Daytime: fade all pool lights off smoothly
