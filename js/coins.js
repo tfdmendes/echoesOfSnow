@@ -126,6 +126,7 @@ const COIN_MATERIAL = new THREE.MeshStandardMaterial({
 let wallet = 0;
 let totalCollected = 0;
 let bestRun = 0;
+let bestScore = 0;
 let runCoins = 0;
 
 export function loadSave() {
@@ -137,10 +138,12 @@ export function loadSave() {
         wallet = data.wallet | 0;
         totalCollected = data.totalCollected | 0;
         bestRun = data.bestRun | 0;
+        bestScore = data.bestScore | 0;
     } catch (_) {
         wallet = 0;
         totalCollected = 0;
         bestRun = 0;
+        bestScore = 0;
     }
 }
 
@@ -151,6 +154,7 @@ function persist() {
             wallet,
             totalCollected,
             bestRun,
+            bestScore,
         });
         localStorage.setItem(SAVE_KEY, payload);
     } catch (_) {
@@ -161,7 +165,19 @@ function persist() {
 export function getWallet()    { return wallet; }
 export function getRunCoins()  { return runCoins; }
 export function getBestRun()   { return bestRun; }
+export function getBestScore() { return bestScore; }
 export function getLifetime()  { return totalCollected; }
+
+// Returns true if this run beat the previous best score
+export function recordRunScore(score) {
+    const s = Math.floor(score) | 0;
+    if (s > bestScore) {
+        bestScore = s;
+        persist();
+        return true;
+    }
+    return false;
+}
 
 export function resetRunCoins() {
     runCoins = 0;

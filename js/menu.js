@@ -556,6 +556,7 @@ export function createMenu({
     getStartCycleOffset,
     setStartCycleOffset,
     getWallet,
+    getBestScore,
     spend,
     onAppearanceChange,
     applyAppearance,
@@ -590,6 +591,25 @@ export function createMenu({
             n;
     }
     refreshWallet();
+
+    const bestChip = document.createElement('div');
+    bestChip.style.cssText =
+        'position:absolute; top:24px; right:24px;' +
+        'transform:translateY(56px);' +
+        'font-family:sans-serif; font-size:13px; letter-spacing:3px;' +
+        'color:#cfd8e6; padding:8px 14px;' +
+        'background:rgba(10,14,28,0.45);' +
+        'border:1px solid rgba(168,204,232,0.25); border-radius:6px;' +
+        'backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);' +
+        'user-select:none; pointer-events:none;';
+    overlay.appendChild(bestChip);
+    function refreshBestScore() {
+        const best = getBestScore ? getBestScore() : 0;
+        bestChip.innerHTML =
+            '<span style="color:#a8cce8; margin-right:8px;">BEST</span>' +
+            best + ' m';
+    }
+    refreshBestScore();
 
     const screens = {
         main:     null,
@@ -638,6 +658,7 @@ export function createMenu({
             overlay.style.opacity = '1';
             overlay.style.visibility = 'visible';
             refreshWallet();
+            refreshBestScore();
             showScreen('main');
             playMenuMusic();
         },
@@ -647,5 +668,6 @@ export function createMenu({
             stopMenuMusic();
             if (onShopStateChange) onShopStateChange(false);
         },
+        refreshBestScore,
     };
 }

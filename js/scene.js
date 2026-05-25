@@ -62,6 +62,7 @@ import {
     updateCoins, checkCoinPickup,
     getWallet, getRunCoins,
     resetRunCoins, commitRunToWallet,
+    getBestScore, recordRunScore,
     spend,
 } from './coins.js';
 import {
@@ -711,6 +712,7 @@ const menu = createMenu({
     getStartCycleOffset: () => startCycleOffset,
     setStartCycleOffset: (t) => { startCycleOffset = t; },
     getWallet,
+    getBestScore,
     spend,
     onAppearanceChange: applyEquippedAppearance,
     applyAppearance: (config) => setSkierAppearance(config),
@@ -879,13 +881,20 @@ function updateWindGust(delta, biome) {
 function showGameOver() {
     gameState = 'gameover';
     snowTrails.pause();
-    const banked = commitRunToWallet();
+    const finalScore = Math.floor(score);
+    const isNewBest  = recordRunScore(finalScore);
+    const best       = getBestScore();
+    const banked     = commitRunToWallet();
+    const scoreLine  = isNewBest
+        ? 'Score: ' + finalScore + ' m &nbsp;<span style="color:#ffd86b; font-weight:bold; letter-spacing:3px;">NEW BEST!</span>'
+        : 'Score: ' + finalScore + ' m &nbsp;&middot;&nbsp; <span style="color:#cfd8e6;">Best: ' + best + ' m</span>';
     document.getElementById('go-score').innerHTML =
-        'Score: ' + Math.floor(score) + ' m' +
+        scoreLine +
         '<br><span style="color:#a8cce8;">&#10052;</span> ' +
         banked + ' collected &nbsp;&middot;&nbsp; wallet: ' + getWallet();
     overlay.style.opacity = '1';
     overlay.style.pointerEvents = 'auto';
+    if (menu && menu.refreshBestScore) menu.refreshBestScore();
 }
 
 function beginEdgeFall() {
@@ -1245,8 +1254,10 @@ function animate(now) {
             }
         }
 
+        const bestNow = getBestScore();
         hud.innerHTML =
             'Score: ' + Math.floor(score) + ' m<br>' +
+            '<span style="color:#a0b8d0;">Best: ' + bestNow + ' m</span><br>' +
             'Speed: ' + gameSpeed.toFixed(1) + ' m/s<br>' +
             '<span style="color:#a8cce8; text-shadow:0 1px 3px rgba(0,0,0,0.75), 0 2px 6px rgba(0,0,0,0.45), 0 0 8px rgba(168,204,232,0.7);">&#10052;</span> ' +
             getRunCoins();
