@@ -54,8 +54,8 @@ export const BIOMES = {
             stump: 0.08, fence: 0.10, litFence: 0.08, lamppost: 0.07,
         },
         nightWeights: {
-            tree: 0.18, rock: 0.08, snowman: 0.08, fallenLog: 0.08,
-            stump: 0.08, fence: 0.00, litFence: 0.25, lamppost: 0.25,
+            tree: 0.26, rock: 0.13, snowman: 0.10, fallenLog: 0.11,
+            stump: 0.10, fence: 0.00, litFence: 0.13, lamppost: 0.17,
         },
     },
     [BIOME_FOREST]: {

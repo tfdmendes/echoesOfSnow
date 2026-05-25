@@ -291,7 +291,7 @@ scene.add(shopRim);
 const NIGHT_LIGHT_COUNT = 12;
 const nightLights = [];
 for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
-    const pl = new THREE.PointLight(0xffaa44, 0, 90, 1.2);
+    const pl = new THREE.PointLight(0xffaa44, 0, 130, 1.15);
     pl._fade = 0;
     pl._id = null;
     pl._lastX = 0;
@@ -1343,15 +1343,21 @@ function animate(now) {
 
     updateCycle(cycleT);
 
-    if (blizzardFactor > 0.001 && tickBiome.fogFarOverride !== undefined) {
-        scene.fog.near = THREE.MathUtils.lerp(scene.fog.near, tickBiome.fogNearOverride, blizzardFactor);
-        scene.fog.far  = THREE.MathUtils.lerp(scene.fog.far,  tickBiome.fogFarOverride,  blizzardFactor);
-        tmpBlizzardColor.setHex(tickBiome.fogColorOverride);
+    if (blizzardFactor > 0.001) {
+        // Use the blizzard biome's overrides directly so the fog ramps with
+        // blizzardFactor while approaching, not just while inside the chunk
+        const stormBiome = getBiome(BIOME_BLIZZARD);
+        scene.fog.near = THREE.MathUtils.lerp(scene.fog.near, stormBiome.fogNearOverride, blizzardFactor);
+        scene.fog.far  = THREE.MathUtils.lerp(scene.fog.far,  stormBiome.fogFarOverride,  blizzardFactor);
+        tmpBlizzardColor.setHex(stormBiome.fogColorOverride);
         scene.fog.color.lerp(tmpBlizzardColor, blizzardFactor);
         scene.background.lerp(tmpBlizzardColor, blizzardFactor);
     }
 
-    const nightFactor = Math.max(0, 1.0 - sunLight.intensity / 1.0);
+    // Smoothstep so lights extinguish at the first hint of dawn instead of
+    // lingering until the sun is at full daytime intensity
+    const rawNight = Math.max(0, 1.0 - sunLight.intensity);
+    const nightFactor = THREE.MathUtils.smoothstep(rawNight, 0.12, 0.42);
 
     updateCoins(chunks, now * 0.001, nightFactor);
 

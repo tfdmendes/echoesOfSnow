@@ -539,7 +539,7 @@ export function animateSkier(time, controls = {}) {
     const leftOutside = turnSide < 0 ? turnAmount : 0;
     const rightOutside = turnSide > 0 ? turnAmount : 0;
 
-    const footMotion = 1 - boost * 0.72 - brake * 0.22;
+    const footMotion = 1 - boost * 0.72 - brake * 0.88;
     const compression = 0.035 * absorb * footMotion;
     const legCounter = 0.018 * glide * footMotion;
     const turnCompression = 0.035 * turnAmount;
@@ -582,7 +582,7 @@ export function animateSkier(time, controls = {}) {
     rightSkiGroup.rotation.z = turnSide * 0.220 * turnAmount;
 
     const stickRaw = Math.sin(time * STICK_SWEEP_SPEED * (1 - brake * 0.12));
-    const stickAmplitude = 0.5 * (1 - boost * 0.72 - brake * 0.22);
+    const stickAmplitude = 0.5 * (1 - boost * 0.72 - brake * 0.88);
     const stickT = 0.5 + stickRaw * stickAmplitude;
     const armX = lerp(STICK_ARM_X[0], STICK_ARM_X[1], stickT);
     const armZ = lerp(STICK_ARM_Z[0], STICK_ARM_Z[1], stickT) + brake * 0.035;
@@ -755,7 +755,7 @@ export function applySkierSnowplowPose(amount) {
     const t = easeOutCubic(amount);
     if (t <= 0) return;
 
-    const scrape = Math.sin(poseTime * 12) * 0.01 * t;
+    const scrape = Math.sin(poseTime * 5) * 0.003 * t;
 
     upperBodyGroup.position.y += PLOW_BODY_RISE * t;
     upperBodyGroup.position.z -= 0.02 * t;
