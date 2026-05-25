@@ -1222,8 +1222,10 @@ function animate(now) {
         skier.rotation.z += (targetLean - skier.rotation.z) * LEAN_SPEED * delta;
 
         animateSkier(elapsed, { boost: boostAmount, brake: brakeAmount });
-        // Tuck/snowplow biases stack on top of the baseline animateSkier pose
-        applySkierTuckPose(boostAmount);
+        // Tuck/snowplow biases stack on top of the baseline animateSkier pose.
+        // S overrides W: fade tuck out as brake comes in so the two poses
+        // don't fight during the W→S transient at high speed.
+        applySkierTuckPose(boostAmount * (1 - brakeAmount));
         applySkierSnowplowPose(brakeAmount);
         snowTrails.update(getSkiTrailContacts(skiTrailContacts), brakeAmount);
 

@@ -47,16 +47,37 @@ js/
   menu.js         Menus, HUD, pause/game-over screens
 ```
 
-### Key techniques
+### Chunked terrain
 
-- **Procedural chunked terrain**: the world is split into chunks that are recycled as the skier moves forward, keeping draw distance bounded while giving an infinite feel.
-- **Weighted biome system**: each biome stores density, spacing, obstacle weights and night weights; biome span scales with `gameSpeed`.
-- **Collision response**: simple primitive colliders (boxes/cylinders) with computed normals so impacts push the skier in a believable direction and trigger the crash sequence.
-- **Released equipment physics**: after a crash, individual equipment pieces detach and use lightweight gravity + bounce + drag + angular velocity to settle on the slope.
-- **Three.js primitives**: the skier and most props are built from grouped primitive meshes rather than imported models, organized as parent/child groups for animation.
-- **Materials & textures**: a central `textures.js` module shares materials so colors/textures can be swapped from the shop without rebuilding geometry.
-- **Camera anchors**: third-person and first-person rigs attached to skier groups, switchable at runtime.
-- **No bundler**: ES modules and an import map keep the project simple to run — open `index.html` in a modern browser (or serve it locally).
+The slope is divided into a small number of fixed-size chunks held in a recycling pool ([terrain.js](js/terrain.js)). Each frame the chunks slide along `-Z` at the current `gameSpeed`. Once a chunk falls behind the camera, it is moved to the front of the queue and repopulated through `onRecycle`, which clears its previous obstacles and asks [obstacles.js](js/obstacles.js) to place new ones based on the active biome and time of day.
+
+The skier itself does not translate in world space; only the world moves underneath it.
+
+### Shadows
+
+This is one of the parts of the project I'm most happy with. Trees, rocks, fences, signs, snowmen, ramps, the skier, the coins, and the equipment released after a crash all cast real-time shadows, and the framerate still holds up.
+
+The scene uses a single shadow-casting `DirectionalLight` ([scene.js:244](js/scene.js:244)). Its shadow camera is an orthographic box of `±150` on X/Y, sized to cover only the playable area, so the mountains, sky, and distant scenery are excluded from the shadow map. The light's position is offset by the skier's position each frame so the frustum stays centered on the player throughout the run.
+
+The visible sun and moon meshes sit roughly 520 units out so they read as distant, while the shadow-casting light stays close to keep the frustum small. The shadow map is `8192²` with `PCFSoftShadowMap`. A high resolution on a small frustum produces crisp edges without shadow acne; lower resolutions on the same frustum looked blocky, and wider frustums at the same resolution looked blurry.
+
+Only meshes that contribute meaningfully to the silhouette have `castShadow = true`. Decorative scenery, lantern glow geometry, and fog volumes are excluded ([scenery.js:130](js/scenery.js:130)). Because obstacles are built once and reused through chunk recycling, the renderer sees the same set of casters every frame.
+
+### Lights at night
+
+Night lighting uses a fixed-size pool of `PointLight`s ([scene.js:291](js/scene.js:291)): 12 lights are reassigned each frame to the closest lit obstacles, such as lanterns and lit windows. Creating one light per lit prop would not scale, so the pool keeps the active light count constant regardless of how many lit obstacles are on screen. Lights fade in and out as their target enters or leaves range so reassignments are not visible.
+
+The pool lights do not cast shadows; only the sun does. Adding more shadow casters was the main source of frame drops during early tests, so the project keeps shadows restricted to the single directional light.
+
+### Other techniques
+
+- **Weighted biome system** ([biomes.js](js/biomes.js)): each biome stores density, spacing, and obstacle weights for day and night. Biome span scales with `gameSpeed` so longer stretches appear as the run progresses.
+- **Collision response** ([collision.js](js/collision.js)): primitive colliders (boxes and cylinders) with computed contact normals, used to push the skier away from the obstacle and select the matching crash variant.
+- **Released-equipment physics** ([skier.js](js/skier.js)): after a crash, individual pieces (skis, poles, hat) detach from the skier's group, switch to world space, and use simple gravity, bounce, drag, and angular velocity to settle on the slope.
+- **Three.js primitives over imported models**: the skier and most props are built from grouped primitive meshes (`BoxGeometry`, `CylinderGeometry`, `ConeGeometry`) organized as parent/child groups for animation. Shared geometries and materials reduce per-mesh setup cost.
+- **Shared materials** ([textures.js](js/textures.js)): a central module owns the materials so colors and textures can be swapped from the shop by reassigning material properties, without rebuilding geometry.
+- **Camera anchors**: third-person and first-person rigs are attached as children of skier sub-groups and switchable at runtime.
+- **No bundler**: ES modules and an import map are enough to serve the project as static files.
 
 ### Play
 
