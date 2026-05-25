@@ -65,7 +65,9 @@ Only meshes that contribute meaningfully to the silhouette have `castShadow = tr
 
 ### Lights at night
 
-Night lighting uses a fixed-size pool of `PointLight`s ([scene.js:291](js/scene.js:291)): 12 lights are reassigned each frame to the closest lit obstacles, such as lanterns and lit windows. Creating one light per lit prop would not scale, so the pool keeps the active light count constant regardless of how many lit obstacles are on screen. Lights fade in and out as their target enters or leaves range so reassignments are not visible.
+Night lighting uses a fixed-size pool of `PointLight`s ([scene.js:292](js/scene.js:292)): 16 lights are reassigned each frame to the highest-priority lit obstacles, such as lanterns and lit windows. Creating one light per lit prop would not scale, so the pool keeps the active light count constant regardless of how many lit obstacles are on screen.
+
+Priority is not raw Euclidean distance: forward distance (obstacles ahead of the skier) is heavily discounted while obstacles behind are penalized. At high speeds this lets slots be claimed ~50m ahead of the player, giving the light enough time to fade in smoothly before the obstacle is in close range. Without the forward bias, slots only opened up once an obstacle was already near, causing visible pop-ins as chunks recycled quickly. A small hysteresis margin on the keep limit prevents slots from churning between candidates of similar rank.
 
 The pool lights do not cast shadows; only the sun does. Adding more shadow casters was the main source of frame drops during early tests, so the project keeps shadows restricted to the single directional light.
 

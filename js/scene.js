@@ -289,7 +289,7 @@ scene.add(shopRim);
 
 // PointLight pool reassigned to the closest lit obstacles each frame so the
 // scene avoids creating a light per obstacle (which would tank framerate)
-const NIGHT_LIGHT_COUNT = 12;
+const NIGHT_LIGHT_COUNT = 16;
 const nightLights = [];
 for (let i = 0; i < NIGHT_LIGHT_COUNT; i++) {
     const pl = new THREE.PointLight(0xffaa44, 0, 130, 1.15);
@@ -1397,6 +1397,18 @@ function animate(now) {
         // Build candidate list with stable per-obstacle ids so a pool slot stays
         // bound to one obstacle until it fades out — prevents teleport-pops when
         // ranks shuffle or chunks recycle
+        // Priority metric: lateral distance is full-weight, but obstacles AHEAD
+        // (wz > skier.z) get their forward distance heavily discounted so they
+        // claim slots ~50m out and have time to fade in before approach. Obstacles
+        // behind get penalized so they release slots quickly.
+        const priority = (wx, wz) => {
+            const dx = wx - skier.position.x;
+            const dz = wz - skier.position.z;
+            const lateral = dx * dx;
+            const forward = dz >= 0 ? dz * dz * 0.15 : dz * dz * 4.0;
+            return lateral + forward;
+        };
+
         const candidates = [];
         for (const chunk of chunks) {
             const obs = chunk.userData.obstacles || [];
@@ -1405,26 +1417,20 @@ function animate(now) {
                 if (ob.mesh.userData.isLitFence) {
                     const wx = chunk.position.x + ob.localX;
                     const wz = chunk.position.z + ob.localZ;
-                    const dx = skier.position.x - wx;
-                    const dz = skier.position.z - wz;
-                    candidates.push({ id: chunk.id + ':f:' + i, x: wx, z: wz, y: 1.1, intensity: 4.0, color: 0xffaa44, dist: dx * dx + dz * dz });
+                    candidates.push({ id: chunk.id + ':f:' + i, x: wx, z: wz, y: 1.1, intensity: 4.0, color: 0xffaa44, dist: priority(wx, wz) });
                 }
                 if (ob.mesh.userData.isLamppost) {
                     const offsetX = ob.mesh.userData.lampOffsetX || 0;
                     const wx = chunk.position.x + ob.localX + offsetX;
                     const wz = chunk.position.z + ob.localZ;
-                    const dx = skier.position.x - wx;
-                    const dz = skier.position.z - wz;
-                    candidates.push({ id: chunk.id + ':l:' + i, x: wx, z: wz, y: 4.2, intensity: 6.0, color: 0xffaa44, dist: dx * dx + dz * dz });
+                    candidates.push({ id: chunk.id + ':l:' + i, x: wx, z: wz, y: 4.2, intensity: 6.0, color: 0xffaa44, dist: priority(wx, wz) });
                 }
             }
             const ffl = chunk.userData.fireflyLightLocal;
             if (ffl) {
                 const wx = chunk.position.x + ffl.x;
                 const wz = chunk.position.z + ffl.z;
-                const dx = skier.position.x - wx;
-                const dz = skier.position.z - wz;
-                candidates.push({ id: chunk.id + ':ff', x: wx, z: wz, y: ffl.y, intensity: 3.5, color: 0xffd060, dist: dx * dx + dz * dz });
+                candidates.push({ id: chunk.id + ':ff', x: wx, z: wz, y: ffl.y, intensity: 3.5, color: 0xffd060, dist: priority(wx, wz) });
             }
         }
 
@@ -1432,14 +1438,14 @@ function animate(now) {
         // NIGHT_LIGHT_COUNT + 8 before being orphaned, but only the closest
         // NIGHT_LIGHT_COUNT can claim a free slot
         candidates.sort((a, b) => a.dist - b.dist);
-        const keepLimit = Math.min(candidates.length, NIGHT_LIGHT_COUNT + 8);
+        const keepLimit = Math.min(candidates.length, NIGHT_LIGHT_COUNT + 12);
         const candById = new Map();
         for (let i = 0; i < keepLimit; i++) {
             candidates[i]._rank = i;
             candById.set(candidates[i].id, candidates[i]);
         }
 
-        const fadeAlpha = 1 - Math.exp(-3 * delta);
+        const fadeAlpha = 1 - Math.exp(-2.2 * delta);
         const claimed = new Set();
 
         // Pass A: refresh slots whose id is still a live candidate
@@ -1457,9 +1463,8 @@ function animate(now) {
                 pl.color.setHex(cand.color);
                 pl._lastX = cand.x;
                 pl._lastZ = cand.z;
-                // Snap to target so distance falloff (PointLight.distance) is
-                // the only thing the player sees ramp as the obstacle nears
-                pl._fade = nightFactor * cand.intensity;
+                const target = nightFactor * cand.intensity;
+                pl._fade += (target - pl._fade) * fadeAlpha;
                 pl.intensity = pl._fade;
                 claimed.add(cand.id);
             } else {
@@ -1488,9 +1493,11 @@ function animate(now) {
             pl._lastZ = cand.z;
             pl.position.set(cand.x, cand.y, cand.z);
             pl.color.setHex(cand.color);
-            // Snap on first assignment — distance attenuation hides the snap
-            // until the skier closes the gap
-            pl._fade = nightFactor * cand.intensity;
+            // Start dark and ramp up via fadeAlpha so newly claimed slots don't
+            // pop in when the candidate ranks shuffle at high speed
+            if (pl._fade > 0.02) pl._fade = 0;
+            const target = nightFactor * cand.intensity;
+            pl._fade += (target - pl._fade) * fadeAlpha;
             pl.intensity = pl._fade;
             claimed.add(cand.id);
         }
