@@ -15,11 +15,6 @@ This module is the main scene and game controller for Echoes of Snow:
 AI assistance: used mostly to help structure the main loop, separate responsibilities,
 and reason about some visual/gameplay systems such as camera smoothing, day/night
 interpolation, crash state transitions, and environmental effects.
-
-Manual work:
-The gameplay rules, constants, module integration, balancing, visual tuning, controls,
-menu behaviour, collision responses, and final testing were designed and adjusted
-manually for Echoes of Snow.
 */
 
 

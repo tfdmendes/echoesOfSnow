@@ -2,7 +2,7 @@
 Author: Tiago Mendes 119378         
         OpenAI ChatGPT 5.5 Thinking 
 
-Terrain and endless-slope system for Echoes of Snow.
+Terrain and endless-slope system
 
 This module builds and manages the ski slope:
 - creates reusable terrain chunks for the endless downhill track;
@@ -18,7 +18,7 @@ and how to structure the custom geometry used for the side slopes and flags.
 Manual work:
 The slope dimensions, playable width, chunk length, flag spacing, materials,
 visual proportions and integration with obstacles/biomes were adjusted and tested
-manually for Echoes of Snow.
+manually
 */
 
 

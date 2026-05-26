@@ -17,7 +17,7 @@ parts were reviewed and adapted manually so they fit the actual gameplay.
 Manual work:
 The visual style, proportions, equipment variants, gameplay integration, shop
 appearance options, collision/fall behaviour, and final tuning were implemented,
-tested, and adjusted manually for Echoes of Snow.
+tested, and adjusted manually
 */
 
 
